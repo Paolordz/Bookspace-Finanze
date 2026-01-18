@@ -162,6 +162,28 @@ const { paginatedData } = usePagination(transactions, 20);
 - `usePagination` - Paginación
 - `useStorage` - Storage automático
 
+## ☁️ Deploy en Vercel
+
+1. Instala dependencias:
+
+```bash
+npm install
+```
+
+2. Corre el proyecto en local:
+
+```bash
+npm run dev
+```
+
+3. Para producción (Vercel usa estos comandos por defecto):
+
+```bash
+npm run build
+```
+
+La salida se genera en la carpeta `dist`, lista para publicar en Vercel.
+
 ## 📊 Características Destacadas
 
 ### Validación Robusta
