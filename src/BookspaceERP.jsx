@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database, Cloud, RefreshCw, ListChecks } from 'lucide-react';
 
 // Auth & Sync
@@ -75,6 +75,9 @@ export default function BookspaceERP() {
   const [crmView, setCrmView] = useState('pipeline');
   const [draggingLeadId, setDraggingLeadId] = useState(null);
   const [dragOverEstado, setDragOverEstado] = useState(null);
+  const toastTimerRef = useRef(null);
+  const toastStartRef = useRef(null);
+  const toastRemainingRef = useRef(0);
 
   // Datos
   const [tx, setTx] = useState([]);
@@ -243,8 +246,56 @@ export default function BookspaceERP() {
   }, [isAuthenticated, user?.uid, loading]);
 
   const notify = (text, type = 'success') => {
-    setMsg({ text, type });
-    setTimeout(() => setMsg(null), 2500);
+    const duration = type === 'error' ? 5000 : 2500;
+    setMsg({ text, type, duration });
+  };
+
+  useEffect(() => {
+    if (!msg) {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+      toastRemainingRef.current = 0;
+      toastStartRef.current = null;
+      return;
+    }
+
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    toastRemainingRef.current = msg.duration;
+    toastStartRef.current = Date.now();
+    toastTimerRef.current = setTimeout(() => setMsg(null), msg.duration);
+
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, [msg]);
+
+  const pauseToastTimer = () => {
+    if (!msg || !toastStartRef.current) return;
+    const elapsed = Date.now() - toastStartRef.current;
+    toastRemainingRef.current = Math.max(0, msg.duration - elapsed);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+  };
+
+  const resumeToastTimer = () => {
+    if (!msg) return;
+    const remaining = toastRemainingRef.current || msg.duration;
+    if (remaining <= 0) {
+      setMsg(null);
+      return;
+    }
+    toastStartRef.current = Date.now();
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = setTimeout(() => setMsg(null), remaining);
   };
 
   const obtenerPrecioPlan = (planId) => PLANES.find(p => p.id === planId)?.precio || 0;
@@ -1126,9 +1177,32 @@ export default function BookspaceERP() {
       
       {/* Notification */}
       {msg && (
-        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-fade-in ${msg.type === 'error' ? 'bg-red-500 text-white' : 'bg-[#2a1d89] text-white'}`}>
-          <CheckCircle className="w-5 h-5" />
+        <div
+          className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-fade-in border ${
+            msg.type === 'error'
+              ? 'bg-red-600 text-white border-red-500'
+              : 'bg-[#2a1d89] text-white border-[#2a1d89]'
+          }`}
+          role={msg.type === 'error' ? 'alert' : 'status'}
+          aria-live={msg.type === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+          onMouseEnter={pauseToastTimer}
+          onMouseLeave={resumeToastTimer}
+        >
+          {msg.type === 'error' ? (
+            <AlertTriangle className="w-5 h-5" />
+          ) : (
+            <CheckCircle className="w-5 h-5" />
+          )}
           <span className="font-medium">{msg.text}</span>
+          <button
+            type="button"
+            onClick={() => setMsg(null)}
+            className="ml-auto rounded-full p-1 transition hover:bg-white/20"
+            aria-label="Cerrar notificación"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
