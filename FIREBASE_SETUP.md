@@ -44,6 +44,21 @@ service cloud.firestore {
     match /users_data/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Tareas por usuario: el owner o miembros en sharedWith pueden leer/escribir
+    match /users/{userId}/tasks/{taskId} {
+      allow read, write: if request.auth != null
+        && (request.auth.uid == userId
+        || request.auth.uid in resource.data.sharedWith
+        || request.auth.uid in request.resource.data.sharedWith);
+    }
+
+    // Tareas compartidas por workspace (opcional)
+    match /workspaces/{workspaceId}/tasks/{taskId} {
+      allow read, write: if request.auth != null
+        && (request.auth.uid in resource.data.sharedWith
+        || request.auth.uid in request.resource.data.sharedWith);
+    }
   }
 }
 ```

@@ -4,7 +4,9 @@ import {
   loadUserDataFromCloud,
   subscribeToUserData,
   syncDataWithCloud,
-  isFirebaseConfigured
+  isFirebaseConfigured,
+  loadTasksFromCloud,
+  subscribeToTasks
 } from '../firebase';
 
 /**
@@ -40,12 +42,22 @@ export const useCloudSync = (userId, localData, onDataUpdate) => {
     setError(null);
 
     try {
-      const result = await loadUserDataFromCloud(userId);
+      const [result, tasksResult] = await Promise.all([
+        loadUserDataFromCloud(userId),
+        loadTasksFromCloud(userId)
+      ]);
 
-      if (result.success && result.data) {
+      const data = result.success ? (result.data || {}) : {};
+      const tasksData = tasksResult.success ? tasksResult.data : [];
+
+      if (tasksData.length > 0) {
+        data.tasks = tasksData;
+      }
+
+      if ((result.success && result.data) || tasksData.length > 0) {
         setSyncStatus(SYNC_STATUS.SYNCED);
         setLastSyncTime(new Date());
-        return result.data;
+        return data;
       }
 
       setSyncStatus(SYNC_STATUS.SYNCED);
@@ -142,6 +154,22 @@ export const useCloudSync = (userId, localData, onDataUpdate) => {
     return () => {
       unsubscribe();
       isSubscribedRef.current = false;
+    };
+  }, [userId, onDataUpdate, isEnabled]);
+
+  useEffect(() => {
+    if (!isEnabled || !userId) return;
+
+    const unsubscribe = subscribeToTasks(userId, (tasks) => {
+      if (Array.isArray(tasks)) {
+        onDataUpdate?.({ tasks });
+        setSyncStatus(SYNC_STATUS.SYNCED);
+        setLastSyncTime(new Date());
+      }
+    });
+
+    return () => {
+      unsubscribe();
     };
   }, [userId, onDataUpdate, isEnabled]);
 

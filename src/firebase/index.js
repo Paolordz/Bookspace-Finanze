@@ -12,6 +12,10 @@ export {
   loadUserDataFromCloud,
   subscribeToUserData,
   syncDataWithCloud,
+  loadTasksFromCloud,
+  subscribeToTasks,
+  saveTaskToCloud,
+  deleteTaskFromCloud,
   exportDataToJSON,
   importDataFromJSON
 } from './sync';
