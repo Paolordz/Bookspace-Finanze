@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database, Cloud, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database, Cloud, RefreshCw, ListChecks } from 'lucide-react';
 
 // Auth & Sync
 import { useAuth, useCloudSync, SYNC_STATUS, useActivityLog } from './hooks';
 import { AuthModal, SyncIndicator } from './components/auth';
 import { UserMenu } from './components/layout';
-import { saveUserDataToCloud, loadUserDataFromCloud, isFirebaseConfigured } from './firebase';
 import { ActivityLog, ActivityWidget } from './components/ActivityLog';
-import MeetingsCalendar from './components/calendar/MeetingsCalendar';
+import TasksBoard from './components/tasks/TasksBoard';
 
 // ========== CONSTANTES ==========
 const CAT_ING = ['Comisiones', 'Premium', 'Premium +', 'Silver', 'Gold', 'Capital', 'Préstamo', 'Otro'];
@@ -84,6 +83,7 @@ export default function BookspaceERP() {
   const [leads, setLeads] = useState([]);
   const [fact, setFact] = useState([]);
   const [juntas, setJuntas] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [cfg, setCfg] = useState({ empresa: 'Bookspace', rfc: '', dir: '', tel: '', email: '' });
 
   // Modal
@@ -128,6 +128,7 @@ export default function BookspaceERP() {
     if (cloudData.leads) setLeads(cloudData.leads);
     if (cloudData.invoices) setFact(cloudData.invoices);
     if (cloudData.meetings) setJuntas(cloudData.meetings);
+    if (cloudData.tasks) setTasks(cloudData.tasks);
     if (cloudData.config) setCfg(cloudData.config);
   }, []);
 
@@ -164,8 +165,8 @@ export default function BookspaceERP() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const keys = ['bs12-tx', 'bs12-cli', 'bs12-prov', 'bs12-emp', 'bs12-leads', 'bs12-fact', 'bs12-juntas', 'bs12-cfg'];
-        const setters = [setTx, setCli, setProv, setEmp, setLeads, setFact, setJuntas, setCfg];
+        const keys = ['bs12-tx', 'bs12-cli', 'bs12-prov', 'bs12-emp', 'bs12-leads', 'bs12-fact', 'bs12-juntas', 'bs12-tasks', 'bs12-cfg'];
+        const setters = [setTx, setCli, setProv, setEmp, setLeads, setFact, setJuntas, setTasks, setCfg];
         
         for (let i = 0; i < keys.length; i++) {
           try {
@@ -205,6 +206,7 @@ export default function BookspaceERP() {
         await window.storage.set('bs12-leads', JSON.stringify(leads));
         await window.storage.set('bs12-fact', JSON.stringify(fact));
         await window.storage.set('bs12-juntas', JSON.stringify(juntas));
+        await window.storage.set('bs12-tasks', JSON.stringify(tasks));
         await window.storage.set('bs12-cfg', JSON.stringify(cfg));
 
         // Sincronizar con la nube si está habilitado
@@ -218,7 +220,7 @@ export default function BookspaceERP() {
 
     const timer = setTimeout(saveData, 500);
     return () => clearTimeout(timer);
-  }, [tx, cli, prov, emp, leads, fact, juntas, cfg, loading, syncEnabled, isAuthenticated, allData, saveToCloudDebounced]);
+  }, [tx, cli, prov, emp, leads, fact, juntas, tasks, cfg, loading, syncEnabled, isAuthenticated, allData, saveToCloudDebounced]);
 
   // Sincronizar cuando el usuario inicie sesión
   useEffect(() => {
@@ -1104,7 +1106,7 @@ export default function BookspaceERP() {
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard' },
     { id: 'crm', icon: Target, label: 'CRM' },
-    { id: 'calendario', icon: CalendarDays, label: 'Calendario' },
+    { id: 'tasks', icon: ListChecks, label: 'Tareas' },
     { id: 'facturas', icon: FileText, label: 'Facturas' },
     { id: 'registros', icon: Receipt, label: 'Registros' },
     { id: 'database', icon: Database, label: 'Base de datos' },
@@ -1641,29 +1643,14 @@ export default function BookspaceERP() {
             </div>
           )}
 
-          {/* ===== CALENDARIO ===== */}
-          {tab === 'calendario' && (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-[#b7bac3] text-sm">{juntas.length} juntas registradas</p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => agregarJunta()}
-                    className="px-4 py-2.5 bg-[#4f67eb] text-white rounded-xl text-sm font-medium hover:bg-[#2a1d89] transition flex items-center gap-2 shadow-md shadow-[#4f67eb]/20"
-                  >
-                    <Plus className="w-4 h-4" />Nueva Junta
-                  </button>
-                </div>
-              </div>
-
-              <MeetingsCalendar
-                meetings={juntas}
-                leads={leads}
-                onSelectMeeting={(meeting) => abrirModal('junta', meeting)}
-              />
-            </div>
+          {/* ===== TASKS ===== */}
+          {tab === 'tasks' && (
+            <TasksBoard
+              tasks={tasks}
+              onTasksChange={setTasks}
+              userId={user?.uid}
+              isAuthenticated={isAuthenticated}
+            />
           )}
 
           {/* ===== FACTURAS ===== */}

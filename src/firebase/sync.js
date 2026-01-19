@@ -6,8 +6,11 @@ import {
   onSnapshot,
   serverTimestamp,
   collection,
-  writeBatch,
-  query
+  query,
+  where,
+  getDocs,
+  collectionGroup,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './config';
 
@@ -15,8 +18,10 @@ import { db, isFirebaseConfigured } from './config';
  * Nombres de las colecciones en Firestore
  */
 const COLLECTIONS = {
+  USERS_DATA: 'users_data',
   USERS: 'users',
-  USERS_DATA: 'users_data'
+  TASKS: 'tasks',
+  WORKSPACES: 'workspaces'
 };
 
 const USER_SUBCOLLECTIONS = [
@@ -128,6 +133,32 @@ const migrateLegacyUserData = async (userId) => {
     migratedToUsers: true,
     migratedAt: serverTimestamp()
   }, { merge: true });
+};
+
+const getUserTasksCollectionRef = (userId) => {
+  return collection(db, COLLECTIONS.USERS, userId, COLLECTIONS.TASKS);
+};
+
+const ensureArray = (value) => Array.isArray(value) ? value : [];
+
+const uniqueValues = (values) => Array.from(new Set(values.filter(Boolean)));
+
+const normalizeTimestamp = (value) => {
+  if (!value) return value;
+  if (typeof value?.toMillis === 'function') {
+    return value.toMillis();
+  }
+  return value;
+};
+
+const mapTaskDoc = (taskDoc) => {
+  const data = taskDoc.data();
+  return {
+    id: taskDoc.id,
+    ...data,
+    createdAt: normalizeTimestamp(data.createdAt),
+    updatedAt: normalizeTimestamp(data.updatedAt)
+  };
 };
 
 /**
@@ -254,6 +285,110 @@ export const subscribeToUserData = (userId, callback) => {
     unsubscribeUser();
     unsubscribes.forEach((unsubscribe) => unsubscribe());
   };
+};
+
+/**
+ * Cargar tareas del usuario desde Firestore (colección)
+ */
+export const loadTasksFromCloud = async (userId) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const tasksQuery = query(
+      collectionGroup(db, COLLECTIONS.TASKS),
+      where('sharedWith', 'array-contains', userId)
+    );
+    const snapshot = await getDocs(tasksQuery);
+    const tasks = snapshot.docs.map(mapTaskDoc);
+
+    return { success: true, data: tasks };
+  } catch (error) {
+    console.error('Error cargando tareas de la nube:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Suscribirse a cambios en tareas del usuario
+ */
+export const subscribeToTasks = (userId, callback) => {
+  if (!isFirebaseConfigured()) {
+    return () => {};
+  }
+
+  const tasksQuery = query(
+    collectionGroup(db, COLLECTIONS.TASKS),
+    where('sharedWith', 'array-contains', userId)
+  );
+
+  return onSnapshot(tasksQuery, (snapshot) => {
+    const tasks = snapshot.docs.map(mapTaskDoc);
+    callback(tasks);
+  }, (error) => {
+    console.error('Error en suscripción de tareas:', error);
+  });
+};
+
+/**
+ * Crear o actualizar una tarea en Firestore
+ */
+export const saveTaskToCloud = async (userId, task) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const ownerId = task.createdBy || userId;
+    const tasksCollectionRef = getUserTasksCollectionRef(ownerId);
+    const taskRef = task.id
+      ? doc(tasksCollectionRef, task.id)
+      : doc(tasksCollectionRef);
+
+    const assignees = ensureArray(task.assignees);
+    const sharedWith = uniqueValues([
+      ownerId,
+      ...ensureArray(task.sharedWith),
+      ...assignees
+    ]);
+
+    const payload = {
+      ...task,
+      id: taskRef.id,
+      createdBy: ownerId,
+      assignees,
+      sharedWith,
+      createdAt: task.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    await setDoc(taskRef, payload, { merge: true });
+
+    return { success: true, id: taskRef.id };
+  } catch (error) {
+    console.error('Error guardando tarea en la nube:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Eliminar una tarea en Firestore
+ */
+export const deleteTaskFromCloud = async (userId, task) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const ownerId = task.createdBy || userId;
+    const taskRef = doc(db, COLLECTIONS.USERS, ownerId, COLLECTIONS.TASKS, task.id);
+    await deleteDoc(taskRef);
+    return { success: true };
+  } catch (error) {
+    console.error('Error eliminando tarea en la nube:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**
