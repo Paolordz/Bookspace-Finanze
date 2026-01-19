@@ -46,4 +46,5 @@ export const STORAGE_KEYS = {
   INVOICES: 'bs12-fact',
   MEETINGS: 'bs12-juntas',
   CONFIG: 'bs12-cfg',
+  ACTIVITY_LOG: 'bs12-activity-log',
 };

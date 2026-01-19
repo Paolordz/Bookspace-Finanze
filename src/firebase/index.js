@@ -15,3 +15,12 @@ export {
   exportDataToJSON,
   importDataFromJSON
 } from './sync';
+export {
+  ACTIVITY_TYPES,
+  ACTIVITY_LABELS,
+  ACTIVITY_CATEGORIES,
+  logActivityToCloud,
+  getActivitiesFromCloud,
+  subscribeToActivities,
+  createLocalActivityEntry
+} from './activityLog';

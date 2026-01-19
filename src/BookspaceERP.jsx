@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database, Cloud, RefreshCw } from 'lucide-react';
 
 // Auth & Sync
-import { useAuth, useCloudSync, SYNC_STATUS } from './hooks';
+import { useAuth, useCloudSync, SYNC_STATUS, useActivityLog } from './hooks';
 import { AuthModal, SyncIndicator } from './components/auth';
 import { UserMenu } from './components/layout';
 import { saveUserDataToCloud, loadUserDataFromCloud, isFirebaseConfigured } from './firebase';
+import { ActivityLog, ActivityWidget } from './components/ActivityLog';
 
 // ========== CONSTANTES ==========
 const CAT_ING = ['Comisiones', 'Premium', 'Premium +', 'Silver', 'Gold', 'Capital', 'Préstamo', 'Otro'];
@@ -132,6 +133,24 @@ export default function BookspaceERP() {
     saveToCloudDebounced,
     syncWithCloud
   } = useCloudSync(user?.uid, allData, handleCloudDataUpdate);
+
+  // Bitácora de actividad
+  const {
+    activities,
+    loading: activityLoading,
+    logTransaction,
+    logClient,
+    logProvider,
+    logEmployee,
+    logLead,
+    logInvoice,
+    logMeeting,
+    logConfig,
+    logUserLogin,
+    logUserLogout,
+    logDataSync,
+    logDataExport
+  } = useActivityLog(user?.uid);
 
   // Cargar datos
   useEffect(() => {
@@ -539,25 +558,31 @@ export default function BookspaceERP() {
 
   const guardarYCerrar = () => {
     if (!editData) return;
-    
+
     switch (modalType) {
       case 'lead':
         setLeads(prev => prev.map(l => l.id === editData.id ? editData : l));
+        logLead('update', editData);
         break;
       case 'cli':
         setCli(prev => prev.map(c => c.id === editData.id ? editData : c));
+        logClient('update', editData);
         break;
       case 'prov':
         setProv(prev => prev.map(p => p.id === editData.id ? editData : p));
+        logProvider('update', editData);
         break;
       case 'emp':
         setEmp(prev => prev.map(e => e.id === editData.id ? editData : e));
+        logEmployee('update', editData);
         break;
       case 'fact':
         setFact(prev => prev.map(f => f.id === editData.id ? editData : f));
+        logInvoice('update', editData);
         break;
       case 'junta':
         setJuntas(prev => prev.map(j => j.id === editData.id ? editData : j));
+        logMeeting('update', editData);
         break;
     }
     cerrarModal();
@@ -570,31 +595,37 @@ export default function BookspaceERP() {
 
   const ejecutarEliminacion = () => {
     if (!editData) return;
-    
+
     switch (modalType) {
       case 'lead':
         setLeads(prev => prev.filter(l => l.id !== editData.id));
         setJuntas(prev => prev.filter(j => j.leadId !== editData.id));
+        logLead('delete', editData);
         notify('Lead eliminado');
         break;
       case 'cli':
         setCli(prev => prev.filter(c => c.id !== editData.id));
+        logClient('delete', editData);
         notify('Cliente eliminado');
         break;
       case 'prov':
         setProv(prev => prev.filter(p => p.id !== editData.id));
+        logProvider('delete', editData);
         notify('Proveedor eliminado');
         break;
       case 'emp':
         setEmp(prev => prev.filter(e => e.id !== editData.id));
+        logEmployee('delete', editData);
         notify('Empleado eliminado');
         break;
       case 'fact':
         setFact(prev => prev.filter(f => f.id !== editData.id));
+        logInvoice('delete', editData);
         notify('Factura eliminada');
         break;
       case 'junta':
         setJuntas(prev => prev.filter(j => j.id !== editData.id));
+        logMeeting('delete', editData);
         notify('Junta eliminada');
         break;
     }
@@ -614,14 +645,28 @@ export default function BookspaceERP() {
       monto: ''
     };
     setTx(prev => [nueva, ...prev]);
+    logTransaction('create', nueva);
     notify('Registro agregado');
   };
 
   const actualizarTx = (id, campo, valor) => {
-    setTx(prev => prev.map(t => t.id === id ? { ...t, [campo]: valor } : t));
+    setTx(prev => prev.map(t => {
+      if (t.id === id) {
+        const updated = { ...t, [campo]: valor };
+        if (campo === 'monto' || campo === 'concepto') {
+          logTransaction('update', updated);
+        }
+        return updated;
+      }
+      return t;
+    }));
   };
 
   const eliminarTx = (id) => {
+    const txToDelete = tx.find(t => t.id === id);
+    if (txToDelete) {
+      logTransaction('delete', txToDelete);
+    }
     setTx(prev => prev.filter(t => t.id !== id));
     notify('Registro eliminado');
   };
@@ -642,6 +687,7 @@ export default function BookspaceERP() {
       notas: ''
     };
     setLeads(prev => [nuevo, ...prev]);
+    logLead('create', nuevo);
     abrirModal('lead', nuevo);
     notify('Lead creado');
   };
@@ -652,7 +698,7 @@ export default function BookspaceERP() {
       notify('Completa nombre del venue o contacto', 'error');
       return;
     }
-    
+
     const nuevoCliente = {
       id: Date.now(),
       nombre: editData.venue || editData.contacto,
@@ -661,9 +707,11 @@ export default function BookspaceERP() {
       tel: editData.tel || '',
       notas: `Convertido de lead. Plan: ${PLANES.find(p => p.id === editData.plan)?.nombre}`
     };
-    
+
     setCli(prev => [nuevoCliente, ...prev]);
     setLeads(prev => prev.map(l => l.id === editData.id ? { ...l, estado: 'cerrado' } : l));
+    logLead('status_change', { ...editData, estado: 'cerrado' }, editData.estado);
+    logClient('create', nuevoCliente);
     cerrarModal();
     notify('¡Convertido a cliente!');
   };
@@ -683,6 +731,7 @@ export default function BookspaceERP() {
       estado: 'pendiente'
     };
     setJuntas(prev => [nueva, ...prev]);
+    logMeeting('create', nueva);
     abrirModal('junta', nueva);
     notify('Junta programada');
   };
@@ -690,6 +739,7 @@ export default function BookspaceERP() {
   const agregarCliente = () => {
     const nuevo = { id: Date.now(), nombre: '', rfc: '', email: '', tel: '', notas: '' };
     setCli(prev => [nuevo, ...prev]);
+    logClient('create', nuevo);
     abrirModal('cli', nuevo);
     notify('Cliente creado');
   };
@@ -697,6 +747,7 @@ export default function BookspaceERP() {
   const agregarProveedor = () => {
     const nuevo = { id: Date.now(), nombre: '', rfc: '', email: '', tel: '', banco: '', cuenta: '' };
     setProv(prev => [nuevo, ...prev]);
+    logProvider('create', nuevo);
     abrirModal('prov', nuevo);
     notify('Proveedor creado');
   };
@@ -704,6 +755,7 @@ export default function BookspaceERP() {
   const agregarEmpleado = () => {
     const nuevo = { id: Date.now(), nombre: '', rfc: '', puesto: '', salario: '', fecha: new Date().toISOString().split('T')[0] };
     setEmp(prev => [nuevo, ...prev]);
+    logEmployee('create', nuevo);
     abrirModal('emp', nuevo);
     notify('Empleado creado');
   };
@@ -729,6 +781,7 @@ export default function BookspaceERP() {
       notas: ''
     };
     setFact(prev => [nueva, ...prev]);
+    logInvoice('create', nueva);
     abrirModal('fact', nueva);
     notify('Factura creada');
   };
@@ -1038,6 +1091,7 @@ export default function BookspaceERP() {
     { id: 'database', icon: Database, label: 'Base de datos' },
     { id: 'contactos', icon: Users, label: 'Contactos' },
     { id: 'finanzas', icon: BarChart3, label: 'Finanzas' },
+    { id: 'bitacora', icon: Activity, label: 'Bitácora' },
     { id: 'config', icon: Settings, label: 'Configuración' },
   ];
 
@@ -1319,28 +1373,38 @@ export default function BookspaceERP() {
                 )}
               </div>
 
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
-                  <Wallet className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
-                  <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.efectivo)}</p>
-                  <p className="text-sm text-[#b7bac3]">Efectivo</p>
+              {/* Activity Widget & Quick Stats */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
+                    <Wallet className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.efectivo)}</p>
+                    <p className="text-sm text-[#b7bac3]">Efectivo</p>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
+                    <Building className="w-6 h-6 mx-auto mb-2 text-[#4f67eb]" />
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.banco)}</p>
+                    <p className="text-sm text-[#b7bac3]">Banco</p>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
+                    <CreditCard className="w-6 h-6 mx-auto mb-2 text-amber-500" />
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xCobrar)}</p>
+                    <p className="text-sm text-[#b7bac3]">Por Cobrar</p>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
+                    <PiggyBank className="w-6 h-6 mx-auto mb-2 text-red-500" />
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xPagar)}</p>
+                    <p className="text-sm text-[#b7bac3]">Por Pagar</p>
+                  </div>
                 </div>
-                <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
-                  <Building className="w-6 h-6 mx-auto mb-2 text-[#4f67eb]" />
-                  <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.banco)}</p>
-                  <p className="text-sm text-[#b7bac3]">Banco</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
-                  <CreditCard className="w-6 h-6 mx-auto mb-2 text-amber-500" />
-                  <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xCobrar)}</p>
-                  <p className="text-sm text-[#b7bac3]">Por Cobrar</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
-                  <PiggyBank className="w-6 h-6 mx-auto mb-2 text-red-500" />
-                  <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xPagar)}</p>
-                  <p className="text-sm text-[#b7bac3]">Por Pagar</p>
-                </div>
+
+                {/* Recent Activity Widget */}
+                <ActivityWidget
+                  activities={activities}
+                  loading={activityLoading}
+                  maxItems={5}
+                  onViewAll={() => setTab('bitacora')}
+                />
               </div>
             </div>
           )}
@@ -2055,6 +2119,26 @@ export default function BookspaceERP() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ===== BITACORA ===== */}
+          {tab === 'bitacora' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-[#2a1d89]">Bitácora de Actividad</h2>
+                  <p className="text-[#b7bac3] mt-1">Historial de todas las acciones realizadas en el sistema</p>
+                </div>
+              </div>
+              <ActivityLog
+                activities={activities}
+                loading={activityLoading}
+                showFilter={true}
+                showSearch={true}
+                maxItems={100}
+                emptyMessage="No hay actividades registradas aún. Las acciones que realices se mostrarán aquí."
+              />
             </div>
           )}
 
