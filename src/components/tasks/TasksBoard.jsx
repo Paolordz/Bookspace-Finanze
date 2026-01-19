@@ -439,7 +439,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                           </option>
                         ))}
                       </select>
-                    <div className="flex items-center gap-2 mt-3">
+                      <div className="flex items-center gap-2 mt-3">
                       <input
                         value={assigneeDrafts[task.id] || ''}
                         onChange={(event) => setAssigneeDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))}
@@ -455,6 +455,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                       >
                         Agregar
                       </button>
+                      </div>
                     </div>
                   </div>
                 </div>
