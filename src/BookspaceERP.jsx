@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu } from 'lucide-react';
+import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database } from 'lucide-react';
 
 // ========== CONSTANTES ==========
 const CAT_ING = ['Comisiones', 'Premium', 'Premium +', 'Silver', 'Gold', 'Capital', 'Préstamo', 'Otro'];
@@ -51,6 +51,7 @@ export default function BookspaceERP() {
   const [subTab, setSubTab] = useState('cli');
   const [filtro, setFiltro] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [dbFiltro, setDbFiltro] = useState('');
   const [año, setAño] = useState(new Date().getFullYear());
   const [mes, setMes] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -130,6 +131,15 @@ export default function BookspaceERP() {
   const notify = (text, type = 'success') => {
     setMsg({ text, type });
     setTimeout(() => setMsg(null), 2500);
+  };
+
+  const renderCellValue = (column, row) => {
+    const raw = row[column.key];
+    const value = column.format ? column.format(raw) : raw;
+    if (value === undefined || value === null || value === '') {
+      return '-';
+    }
+    return value;
   };
 
   const handleNav = (id) => {
@@ -274,6 +284,104 @@ export default function BookspaceERP() {
       .sort((a, b) => new Date(a.fecha + 'T' + a.hora) - new Date(b.fecha + 'T' + b.hora))
       .slice(0, 5);
   }, [juntas]);
+
+  const databaseSections = useMemo(() => ([
+    {
+      id: 'tx',
+      title: 'Transacciones',
+      description: 'Ingresos y egresos registrados',
+      columns: [
+        { key: 'fecha', label: 'Fecha' },
+        { key: 'tipo', label: 'Tipo' },
+        { key: 'cat', label: 'Categoría' },
+        { key: 'concepto', label: 'Concepto' },
+        { key: 'caja', label: 'Caja' },
+        { key: 'monto', label: 'Monto', format: value => fmt(value) },
+      ],
+      rows: tx,
+    },
+    {
+      id: 'cli',
+      title: 'Clientes',
+      description: 'Clientes registrados en el sistema',
+      columns: [
+        { key: 'nombre', label: 'Nombre' },
+        { key: 'rfc', label: 'RFC' },
+        { key: 'email', label: 'Email' },
+        { key: 'tel', label: 'Teléfono' },
+        { key: 'notas', label: 'Notas' },
+      ],
+      rows: cli,
+    },
+    {
+      id: 'prov',
+      title: 'Proveedores',
+      description: 'Directorio de proveedores',
+      columns: [
+        { key: 'nombre', label: 'Nombre' },
+        { key: 'rfc', label: 'RFC' },
+        { key: 'email', label: 'Email' },
+        { key: 'tel', label: 'Teléfono' },
+        { key: 'banco', label: 'Banco' },
+        { key: 'cuenta', label: 'Cuenta' },
+      ],
+      rows: prov,
+    },
+    {
+      id: 'emp',
+      title: 'Empleados',
+      description: 'Equipo y nómina',
+      columns: [
+        { key: 'nombre', label: 'Nombre' },
+        { key: 'puesto', label: 'Puesto' },
+        { key: 'salario', label: 'Salario', format: value => fmt(value) },
+        { key: 'fecha', label: 'Fecha de ingreso' },
+        { key: 'rfc', label: 'RFC' },
+      ],
+      rows: emp,
+    },
+    {
+      id: 'leads',
+      title: 'Leads',
+      description: 'Prospectos cargados en CRM',
+      columns: [
+        { key: 'venue', label: 'Venue' },
+        { key: 'contacto', label: 'Contacto' },
+        { key: 'estado', label: 'Estado' },
+        { key: 'plan', label: 'Plan' },
+        { key: 'fuente', label: 'Fuente' },
+        { key: 'fecha', label: 'Fecha' },
+      ],
+      rows: leads,
+    },
+    {
+      id: 'fact',
+      title: 'Facturas',
+      description: 'Facturación emitida',
+      columns: [
+        { key: 'num', label: 'Folio' },
+        { key: 'clienteNom', label: 'Cliente' },
+        { key: 'fecha', label: 'Fecha' },
+        { key: 'estado', label: 'Estado' },
+        { key: 'total', label: 'Total', format: value => fmt(value) },
+      ],
+      rows: fact,
+    },
+    {
+      id: 'juntas',
+      title: 'Juntas',
+      description: 'Agenda de reuniones',
+      columns: [
+        { key: 'leadNombre', label: 'Lead' },
+        { key: 'fecha', label: 'Fecha' },
+        { key: 'hora', label: 'Hora' },
+        { key: 'tipo', label: 'Tipo' },
+        { key: 'estado', label: 'Estado' },
+        { key: 'lugar', label: 'Lugar' },
+      ],
+      rows: juntas,
+    },
+  ]), [tx, cli, prov, emp, leads, fact, juntas]);
 
   // ========== FUNCIONES MODAL ==========
   const abrirModal = (tipo, datos) => {
@@ -762,6 +870,7 @@ export default function BookspaceERP() {
     { id: 'crm', icon: Target, label: 'CRM' },
     { id: 'facturas', icon: FileText, label: 'Facturas' },
     { id: 'registros', icon: Receipt, label: 'Registros' },
+    { id: 'database', icon: Database, label: 'Base de datos' },
     { id: 'contactos', icon: Users, label: 'Contactos' },
     { id: 'finanzas', icon: BarChart3, label: 'Finanzas' },
     { id: 'config', icon: Settings, label: 'Configuración' },
@@ -1309,6 +1418,81 @@ export default function BookspaceERP() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== BASE DE DATOS ===== */}
+          {tab === 'database' && (
+            <div className="space-y-6">
+              <div className="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                  <p className="text-[#b7bac3] text-sm">
+                    {databaseSections.reduce((total, section) => total + section.rows.length, 0)} registros guardados
+                  </p>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#b7bac3]" />
+                  <input
+                    type="text"
+                    value={dbFiltro}
+                    onChange={e => setDbFiltro(e.target.value)}
+                    placeholder="Buscar en la base de datos"
+                    className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {databaseSections.map(section => {
+                  const rows = dbFiltro
+                    ? section.rows.filter(row => JSON.stringify(row).toLowerCase().includes(dbFiltro.toLowerCase()))
+                    : section.rows;
+
+                  return (
+                    <div key={section.id} className="bg-white border border-gray-100 rounded-2xl p-5">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                        <div>
+                          <h3 className="text-[#2a1d89] font-semibold">{section.title}</h3>
+                          <p className="text-sm text-[#b7bac3]">{section.description}</p>
+                        </div>
+                        <span className="text-sm font-medium text-[#4f67eb]">{rows.length} registros</span>
+                      </div>
+
+                      {rows.length === 0 ? (
+                        <div className="py-8 text-center text-[#b7bac3]">No hay registros en esta sección</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-[#2a1d89] border-b border-gray-100">
+                                {section.columns.map(column => (
+                                  <th key={column.key} className="px-3 py-2 font-semibold whitespace-nowrap">
+                                    {column.label}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((row, idx) => (
+                                <tr key={row.id || idx} className="border-b border-gray-50 last:border-b-0">
+                                  {section.columns.map(column => {
+                                    const value = renderCellValue(column, row);
+                                    return (
+                                      <td key={column.key} className="px-3 py-2 text-[#2a1d89] max-w-[220px] truncate" title={String(value)}>
+                                        {value}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
