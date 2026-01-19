@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarChart3, Scale, ArrowUpRight, ArrowDownRight, Wallet, Building, CreditCard, PiggyBank, Search, Target, UserPlus, FileText, Printer, TrendingUp, DollarSign, User, Calendar, Clock, Filter, PieChart, Activity, AlertTriangle, CalendarDays, FileSpreadsheet, Home, Bell, ChevronDown, MoreHorizontal, Eye, Edit, Menu, Database, Cloud, RefreshCw, ListChecks } from 'lucide-react';
 
 // Auth & Sync
-import { useAuth, useCloudSync, SYNC_STATUS, useActivityLog } from './hooks';
+import { useAuth, useCloudSync, SYNC_STATUS, useActivityLog, useUsers } from './hooks';
 import { AuthModal, SyncIndicator } from './components/auth';
 import { UserMenu } from './components/layout';
 import { ActivityLog, ActivityWidget } from './components/ActivityLog';
@@ -112,6 +112,8 @@ export default function BookspaceERP() {
     register,
     sendPasswordReset
   } = useAuth();
+
+  const { users: teamUsers } = useUsers({ enabled: isAuthenticated });
 
   // Datos para sincronización
   const allData = useMemo(() => ({
@@ -1840,6 +1842,7 @@ export default function BookspaceERP() {
               onTasksChange={setTasks}
               userId={user?.uid}
               isAuthenticated={isAuthenticated}
+              users={teamUsers}
             />
           )}
 
