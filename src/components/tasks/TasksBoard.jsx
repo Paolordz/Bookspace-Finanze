@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar, CheckCircle2, Plus, UserPlus, X, AlertTriangle, Trash2 } from 'lucide-react';
+import { Calendar, CheckCircle2, Plus, X, AlertTriangle, Trash2 } from 'lucide-react';
 import { deleteTaskFromCloud, isFirebaseConfigured, saveTaskToCloud } from '../../firebase';
 
 /**
@@ -39,12 +39,6 @@ const buildTaskId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-const normalizeAssignees = (value) =>
-  value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
 const uniqueValues = (values) => Array.from(new Set(values.filter(Boolean)));
 
 const buildSharedWith = (task, userId) => {
@@ -55,14 +49,13 @@ const buildSharedWith = (task, userId) => {
   ]);
 };
 
-export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticated }) {
+export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticated, users = [] }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('por_hacer');
   const [priority, setPriority] = useState('media');
   const [dueDate, setDueDate] = useState('');
-  const [assigneesInput, setAssigneesInput] = useState('');
-  const [assigneeDrafts, setAssigneeDrafts] = useState({});
+  const [assigneesSelected, setAssigneesSelected] = useState([]);
   const [error, setError] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [savingTasks, setSavingTasks] = useState({});
@@ -70,6 +63,30 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
   const buildErrorMessage = (response, fallback) => {
     if (!response) return fallback;
     return response.error || response.reason || fallback;
+  };
+
+  const usersById = useMemo(() => {
+    return users.reduce((acc, user) => {
+      acc[user.uid] = user;
+      return acc;
+    }, {});
+  }, [users]);
+
+  const userOptions = useMemo(() => {
+    return [...users].sort((a, b) => {
+      const labelA = (a.displayName || a.email || a.uid).toLowerCase();
+      const labelB = (b.displayName || b.email || b.uid).toLowerCase();
+      return labelA.localeCompare(labelB);
+    });
+  }, [users]);
+
+  const getAssigneeLabel = (uid) => {
+    const user = usersById[uid];
+    if (!user) return uid;
+    if (user.displayName && user.email) {
+      return `${user.displayName} · ${user.email}`;
+    }
+    return user.displayName || user.email || uid;
   };
 
   const tasksByStatus = useMemo(() => {
@@ -85,7 +102,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
       return;
     }
 
-    const assignees = normalizeAssignees(assigneesInput);
+    const assignees = uniqueValues(assigneesSelected);
     const now = Date.now();
     const createdBy = userId || 'local';
     const newTask = {
@@ -107,7 +124,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
     setTitle('');
     setDescription('');
     setDueDate('');
-    setAssigneesInput('');
+    setAssigneesSelected([]);
     setStatus('por_hacer');
     setPriority('media');
     setError(null);
@@ -181,18 +198,6 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
         setSavingTasks((prev) => ({ ...prev, [taskToDelete.id]: false }));
       }
     }
-  };
-
-  const handleAddAssignee = (taskId) => {
-    const draft = assigneeDrafts[taskId] || '';
-    const values = normalizeAssignees(draft);
-    if (values.length === 0) return;
-
-    const task = tasks.find((item) => item.id === taskId);
-    const assignees = uniqueValues([...(task.assignees || []), ...values]);
-
-    updateTask(taskId, { assignees });
-    setAssigneeDrafts((prev) => ({ ...prev, [taskId]: '' }));
   };
 
   const handleRemoveAssignee = (taskId, assignee) => {
@@ -278,6 +283,25 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             </select>
           </div>
           <div className="md:col-span-2">
+            <label className="text-xs font-medium text-[#2a1d89]">Asignados</label>
+            <select
+              multiple
+              value={assigneesSelected}
+              onChange={(event) => {
+                const values = Array.from(event.target.selectedOptions).map((option) => option.value);
+                setAssigneesSelected(values);
+              }}
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none min-h-[120px]"
+            >
+              {userOptions.map((user) => (
+                <option key={user.uid} value={user.uid}>
+                  {getAssigneeLabel(user.uid)}
+                </option>
+              ))}
+            </select>
+            {userOptions.length === 0 && (
+              <p className="text-xs text-[#b7bac3] mt-2">No hay usuarios registrados para asignar.</p>
+            )}
             <label className="text-xs font-medium text-[#2a1d89]">Asignados (UIDs separados por coma)</label>
             <input
               value={assigneesInput}
@@ -385,7 +409,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                       {(task.assignees || []).map((assignee) => (
                         <span key={assignee} className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-white border border-gray-200">
                           <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          {assignee}
+                          {getAssigneeLabel(assignee)}
                           <button
                             type="button"
                             onClick={() => handleRemoveAssignee(task.id, assignee)}
@@ -397,6 +421,16 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                         </span>
                       ))}
                     </div>
+                    <div className="mt-3">
+                      <label className="text-xs text-[#2a1d89]">Actualizar asignados</label>
+                      <select
+                        multiple
+                        value={task.assignees || []}
+                        onChange={(event) => {
+                          const values = Array.from(event.target.selectedOptions).map((option) => option.value);
+                          updateTask(task.id, { assignees: uniqueValues(values) });
+                        }}
+                        className="w-full mt-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none min-h-[100px]"
                     <div className="flex items-center gap-2 mt-3">
                       <input
                         value={assigneeDrafts[task.id] || ''}
@@ -411,8 +445,12 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                         className="px-3 py-2 bg-[#4f67eb] text-white rounded-lg text-xs font-medium hover:bg-[#2a1d89] transition flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                         disabled={isSavingTask}
                       >
-                        <UserPlus className="w-3 h-3" />Asignar
-                      </button>
+                        {userOptions.map((user) => (
+                          <option key={user.uid} value={user.uid}>
+                            {getAssigneeLabel(user.uid)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>

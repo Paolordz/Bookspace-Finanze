@@ -6,7 +6,20 @@ import {
   updateProfile,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from './config';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db, isFirebaseConfigured } from './config';
+
+const upsertUserProfile = async ({ uid, displayName, email }) => {
+  if (!db) return;
+  const userRef = doc(db, 'users', uid);
+  await setDoc(userRef, {
+    displayName: displayName || '',
+    email: email || '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    active: true
+  }, { merge: true });
+};
 
 /**
  * Registrar un nuevo usuario
@@ -32,6 +45,16 @@ export const registerUser = async (email, password, displayName) => {
         console.warn('No se pudo actualizar el nombre de perfil:', profileError.message);
         // No fallamos el registro si solo falla el nombre
       }
+    }
+
+    try {
+      await upsertUserProfile({
+        uid: userCredential.user.uid,
+        displayName: displayName || userCredential.user.displayName || '',
+        email: userCredential.user.email || email || ''
+      });
+    } catch (profileError) {
+      console.warn('No se pudo crear el perfil público:', profileError.message);
     }
 
     return {

@@ -19,6 +19,7 @@ export {
   exportDataToJSON,
   importDataFromJSON
 } from './sync';
+export { loadUsersFromCloud, subscribeToUsers } from './users';
 export {
   ACTIVITY_TYPES,
   ACTIVITY_LABELS,

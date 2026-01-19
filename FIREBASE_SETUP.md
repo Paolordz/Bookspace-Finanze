@@ -45,6 +45,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Perfiles públicos de usuarios
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Tareas por usuario: el owner o miembros en sharedWith pueden leer/escribir
     match /users/{userId}/tasks/{taskId} {
       allow read, write: if request.auth != null
