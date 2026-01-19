@@ -73,6 +73,7 @@ export default function BookspaceERP() {
   const [msg, setMsg] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [crmView, setCrmView] = useState('pipeline');
+  const [searchQuery, setSearchQuery] = useState('');
   const [draggingLeadId, setDraggingLeadId] = useState(null);
   const [dragOverEstado, setDragOverEstado] = useState(null);
   const toastTimerRef = useRef(null);
@@ -195,6 +196,19 @@ export default function BookspaceERP() {
       setSidebarOpen(false);
     }
   }, []);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, []);
+
+  const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
   // Guardar datos (local + nube)
   useEffect(() => {
@@ -378,9 +392,17 @@ export default function BookspaceERP() {
       const fecha = new Date(t.fecha);
       const matchAño = fecha.getFullYear() === año;
       const matchMes = mes === 0 || (fecha.getMonth() + 1) === mes;
-      return matchAño && matchMes;
+      const matchSearch = !normalizedSearch || [
+        t.concepto,
+        t.notas,
+        t.cat,
+        t.tipo,
+        t.caja,
+        t.monto
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
+      return matchAño && matchMes && matchSearch;
     });
-  }, [tx, año, mes]);
+  }, [tx, año, mes, normalizedSearch]);
 
   // ========== CALCULOS ==========
   const totales = useMemo(() => {
@@ -490,9 +512,56 @@ export default function BookspaceERP() {
       const fecha = new Date(f.fecha);
       const matchAño = fecha.getFullYear() === año;
       const matchMes = mes === 0 || (fecha.getMonth() + 1) === mes;
-      return matchAño && matchMes;
+      const matchSearch = !normalizedSearch || [
+        f.num,
+        f.clienteNom,
+        f.estado,
+        f.total
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
+      return matchAño && matchMes && matchSearch;
     });
-  }, [fact, año, mes]);
+  }, [fact, año, mes, normalizedSearch]);
+
+  const cliFiltradas = useMemo(() => {
+    return cli.filter(c => {
+      if (!normalizedSearch) return true;
+      return [
+        c.nombre,
+        c.rfc,
+        c.email,
+        c.tel,
+        c.notas
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
+    });
+  }, [cli, normalizedSearch]);
+
+  const provFiltradas = useMemo(() => {
+    return prov.filter(p => {
+      if (!normalizedSearch) return true;
+      return [
+        p.nombre,
+        p.rfc,
+        p.email,
+        p.tel,
+        p.banco,
+        p.cuenta,
+        p.notas
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
+    });
+  }, [prov, normalizedSearch]);
+
+  const empFiltradas = useMemo(() => {
+    return emp.filter(e => {
+      if (!normalizedSearch) return true;
+      return [
+        e.nombre,
+        e.puesto,
+        e.rfc,
+        e.salario,
+        e.fecha
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
+    });
+  }, [emp, normalizedSearch]);
 
   const factStats = useMemo(() => ({
     total: factFiltradas.length,
@@ -521,7 +590,7 @@ export default function BookspaceERP() {
         { key: 'caja', label: 'Caja' },
         { key: 'monto', label: 'Monto', format: value => fmt(value) },
       ],
-      rows: tx,
+      rows: txFiltradas,
     },
     {
       id: 'cli',
@@ -534,7 +603,7 @@ export default function BookspaceERP() {
         { key: 'tel', label: 'Teléfono' },
         { key: 'notas', label: 'Notas' },
       ],
-      rows: cli,
+      rows: cliFiltradas,
     },
     {
       id: 'prov',
@@ -548,7 +617,7 @@ export default function BookspaceERP() {
         { key: 'banco', label: 'Banco' },
         { key: 'cuenta', label: 'Cuenta' },
       ],
-      rows: prov,
+      rows: provFiltradas,
     },
     {
       id: 'emp',
@@ -561,7 +630,7 @@ export default function BookspaceERP() {
         { key: 'fecha', label: 'Fecha de ingreso' },
         { key: 'rfc', label: 'RFC' },
       ],
-      rows: emp,
+      rows: empFiltradas,
     },
     {
       id: 'leads',
@@ -588,7 +657,7 @@ export default function BookspaceERP() {
         { key: 'estado', label: 'Estado' },
         { key: 'total', label: 'Total', format: value => fmt(value) },
       ],
-      rows: fact,
+      rows: factFiltradas,
     },
     {
       id: 'juntas',
@@ -604,7 +673,7 @@ export default function BookspaceERP() {
       ],
       rows: juntas,
     },
-  ]), [tx, cli, prov, emp, leads, fact, juntas]);
+  ]), [txFiltradas, cliFiltradas, provFiltradas, empFiltradas, leads, factFiltradas, juntas]);
 
   // ========== FUNCIONES MODAL ==========
   const abrirModal = (tipo, datos) => {
@@ -1022,10 +1091,21 @@ export default function BookspaceERP() {
         l.contacto?.toLowerCase().includes(filtro.toLowerCase()) || 
         l.venue?.toLowerCase().includes(filtro.toLowerCase()) ||
         l.ciudad?.toLowerCase().includes(filtro.toLowerCase());
+      const matchSearch = !normalizedSearch || [
+        l.contacto,
+        l.venue,
+        l.email,
+        l.tel,
+        l.ciudad,
+        l.estado,
+        l.plan,
+        l.fuente,
+        l.notas
+      ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
       const matchEstado = filtroEstado === 'todos' || l.estado === filtroEstado;
-      return matchTexto && matchEstado;
+      return matchTexto && matchEstado && matchSearch;
     });
-  }, [leads, filtro, filtroEstado]);
+  }, [leads, filtro, filtroEstado, normalizedSearch]);
 
   const leadsPorEstado = useMemo(() => {
     const grouped = EST_LEAD.reduce((acc, estado) => {
@@ -1220,7 +1300,10 @@ export default function BookspaceERP() {
             <button
               key={item.id}
               onClick={() => handleNav(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+              aria-label={item.label}
+              title={item.label}
+              aria-current={tab === item.id ? 'page' : undefined}
+              className={`w-full relative group flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 tab === item.id 
                   ? 'bg-[#4f67eb] text-white shadow-md shadow-[#4f67eb]/20' 
                   : 'text-[#2a1d89] hover:bg-[#4f67eb]/5'
@@ -1228,6 +1311,11 @@ export default function BookspaceERP() {
             >
               <item.icon className="w-5 h-5" />
               {sidebarOpen && <span>{item.label}</span>}
+              {!sidebarOpen && (
+                <span className="pointer-events-none absolute left-full top-1/2 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-[#2a1d89] px-2 py-1 text-xs text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                  {item.label}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -1299,8 +1387,13 @@ export default function BookspaceERP() {
               <div className="relative w-full md:w-auto">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#b7bac3]" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Buscar"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  aria-label="Buscar"
+                  role="searchbox"
                   className="bg-[#f8f9fc] border-none rounded-xl pl-10 pr-4 py-2.5 text-sm w-full md:w-48 focus:ring-2 focus:ring-[#4f67eb]/20 outline-none"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#b7bac3] bg-white px-1.5 py-0.5 rounded">⌘K</span>
@@ -2029,7 +2122,7 @@ export default function BookspaceERP() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {cli.map(c => (
+                    {cliFiltradas.map(c => (
                       <div key={c.id} onClick={() => abrirModal('cli', c)} className="bg-white border border-gray-100 rounded-2xl p-5 cursor-pointer hover:border-[#4f67eb] hover:shadow-lg transition-all">
                         <p className="font-bold text-[#2a1d89]">{c.nombre || 'Sin nombre'}</p>
                         {c.email && <p className="text-[#b7bac3] text-sm mt-1">📧 {c.email}</p>}
@@ -2037,7 +2130,7 @@ export default function BookspaceERP() {
                       </div>
                     ))}
                   </div>
-                  {cli.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay clientes</p>}
+                  {cliFiltradas.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay clientes</p>}
                 </>
               )}
 
@@ -2050,7 +2143,7 @@ export default function BookspaceERP() {
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {prov.map(p => (
+                    {provFiltradas.map(p => (
                       <div key={p.id} onClick={() => abrirModal('prov', p)} className="bg-white border border-gray-100 rounded-2xl p-5 cursor-pointer hover:border-[#4f67eb] hover:shadow-lg transition-all">
                         <p className="font-bold text-[#2a1d89]">{p.nombre || 'Sin nombre'}</p>
                         {p.email && <p className="text-[#b7bac3] text-sm mt-1">📧 {p.email}</p>}
@@ -2058,7 +2151,7 @@ export default function BookspaceERP() {
                       </div>
                     ))}
                   </div>
-                  {prov.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay proveedores</p>}
+                  {provFiltradas.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay proveedores</p>}
                 </>
               )}
 
@@ -2071,7 +2164,7 @@ export default function BookspaceERP() {
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {emp.map(e => (
+                    {empFiltradas.map(e => (
                       <div key={e.id} onClick={() => abrirModal('emp', e)} className="bg-white border border-gray-100 rounded-2xl p-5 cursor-pointer hover:border-[#4f67eb] hover:shadow-lg transition-all">
                         <p className="font-bold text-[#2a1d89]">{e.nombre || 'Sin nombre'}</p>
                         <p className="text-[#b7bac3] text-sm">{e.puesto || 'Sin puesto'}</p>
@@ -2079,7 +2172,7 @@ export default function BookspaceERP() {
                       </div>
                     ))}
                   </div>
-                  {emp.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay empleados</p>}
+                  {empFiltradas.length === 0 && <p className="text-center py-16 text-[#b7bac3]">No hay empleados</p>}
                 </>
               )}
             </div>
