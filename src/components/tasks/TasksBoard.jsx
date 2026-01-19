@@ -57,6 +57,13 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
   const [dueDate, setDueDate] = useState('');
   const [assigneesSelected, setAssigneesSelected] = useState([]);
   const [error, setError] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [savingTasks, setSavingTasks] = useState({});
+
+  const buildErrorMessage = (response, fallback) => {
+    if (!response) return fallback;
+    return response.error || response.reason || fallback;
+  };
 
   const usersById = useMemo(() => {
     return users.reduce((acc, user) => {
@@ -112,6 +119,7 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
       updatedAt: now
     };
 
+    const previousTasks = tasks;
     onTasksChange([newTask, ...tasks]);
     setTitle('');
     setDescription('');
@@ -122,11 +130,23 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
     setError(null);
 
     if (isFirebaseConfigured() && isAuthenticated && userId) {
-      await saveTaskToCloud(userId, newTask);
+      setIsCreating(true);
+      try {
+        const response = await saveTaskToCloud(userId, newTask);
+        if (!response?.success) {
+          onTasksChange(previousTasks);
+          setError(buildErrorMessage(response, 'No se pudo guardar la tarea en la nube.'));
+        } else {
+          setError(null);
+        }
+      } finally {
+        setIsCreating(false);
+      }
     }
   };
 
   const updateTask = async (taskId, updates) => {
+    const previousTasks = tasks;
     const updatedTasks = tasks.map((task) => {
       if (task.id !== taskId) return task;
       const nextTask = {
@@ -142,7 +162,18 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
     onTasksChange(updatedTasks);
 
     if (updatedTask && isFirebaseConfigured() && isAuthenticated && userId) {
-      await saveTaskToCloud(userId, updatedTask);
+      setSavingTasks((prev) => ({ ...prev, [taskId]: true }));
+      try {
+        const response = await saveTaskToCloud(userId, updatedTask);
+        if (!response?.success) {
+          onTasksChange(previousTasks);
+          setError(buildErrorMessage(response, 'No se pudo sincronizar la tarea.'));
+        } else {
+          setError(null);
+        }
+      } finally {
+        setSavingTasks((prev) => ({ ...prev, [taskId]: false }));
+      }
     }
   };
 
@@ -150,10 +181,22 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
     const confirmed = window.confirm('¿Eliminar esta tarea?');
     if (!confirmed) return;
 
+    const previousTasks = tasks;
     onTasksChange(tasks.filter((task) => task.id !== taskToDelete.id));
 
     if (isFirebaseConfigured() && isAuthenticated && userId) {
-      await deleteTaskFromCloud(userId, taskToDelete);
+      setSavingTasks((prev) => ({ ...prev, [taskToDelete.id]: true }));
+      try {
+        const response = await deleteTaskFromCloud(userId, taskToDelete);
+        if (!response?.success) {
+          onTasksChange(previousTasks);
+          setError(buildErrorMessage(response, 'No se pudo eliminar la tarea en la nube.'));
+        } else {
+          setError(null);
+        }
+      } finally {
+        setSavingTasks((prev) => ({ ...prev, [taskToDelete.id]: false }));
+      }
     }
   };
 
@@ -187,8 +230,9 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
               placeholder="Ej. Revisar flujo de caja"
+              disabled={isCreating}
             />
           </div>
           <div>
@@ -197,7 +241,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
               type="date"
               value={dueDate}
               onChange={(event) => setDueDate(event.target.value)}
-              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+              disabled={isCreating}
             />
           </div>
           <div className="md:col-span-2">
@@ -205,9 +250,10 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
               rows={3}
               placeholder="Detalles de la tarea..."
+              disabled={isCreating}
             />
           </div>
           <div>
@@ -215,7 +261,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value)}
-              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+              disabled={isCreating}
             >
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -227,7 +274,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             <select
               value={priority}
               onChange={(event) => setPriority(event.target.value)}
-              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+              disabled={isCreating}
             >
               {PRIORITY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -254,6 +302,14 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
             {userOptions.length === 0 && (
               <p className="text-xs text-[#b7bac3] mt-2">No hay usuarios registrados para asignar.</p>
             )}
+            <label className="text-xs font-medium text-[#2a1d89]">Asignados (UIDs separados por coma)</label>
+            <input
+              value={assigneesInput}
+              onChange={(event) => setAssigneesInput(event.target.value)}
+              className="w-full mt-1 bg-[#f8f9fc] border border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+              placeholder="uid-1, uid-2"
+              disabled={isCreating}
+            />
           </div>
         </div>
         {error && (
@@ -263,9 +319,11 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
           <button
             type="button"
             onClick={handleCreate}
-            className="px-4 py-2.5 bg-[#4f67eb] text-white rounded-xl text-sm font-medium hover:bg-[#2a1d89] transition flex items-center gap-2 shadow-md shadow-[#4f67eb]/20"
+            className="px-4 py-2.5 bg-[#4f67eb] text-white rounded-xl text-sm font-medium hover:bg-[#2a1d89] transition flex items-center gap-2 shadow-md shadow-[#4f67eb]/20 disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={isCreating}
           >
-            <Plus className="w-4 h-4" />Crear tarea
+            <Plus className="w-4 h-4" />
+            {isCreating ? 'Guardando...' : 'Crear tarea'}
           </button>
         </div>
       </div>
@@ -296,7 +354,9 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                   </button>
                 </div>
               )}
-              {tasksForStatus.map((task) => (
+              {tasksForStatus.map((task) => {
+                const isSavingTask = savingTasks[task.id];
+                return (
                 <div key={task.id} className="border border-gray-100 rounded-xl p-4 bg-[#f8f9fc]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -304,11 +364,15 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                       {task.description && (
                         <p className="text-xs text-[#b7bac3] mt-1">{task.description}</p>
                       )}
+                      {isSavingTask && (
+                        <p className="text-xs text-[#4f67eb] mt-1">Guardando cambios...</p>
+                      )}
                     </div>
                     <button
                       type="button"
                       onClick={() => handleDelete(task)}
-                      className="text-[#b7bac3] hover:text-red-500 transition"
+                      className="text-[#b7bac3] hover:text-red-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      disabled={isSavingTask}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -328,7 +392,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                     <select
                       value={task.status}
                       onChange={(event) => updateTask(task.id, { status: event.target.value })}
-                      className="w-full mt-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none"
+                      className="w-full mt-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+                      disabled={isSavingTask}
                     >
                       {STATUS_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -348,7 +413,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                           <button
                             type="button"
                             onClick={() => handleRemoveAssignee(task.id, assignee)}
-                            className="text-[#b7bac3] hover:text-red-500"
+                            className="text-[#b7bac3] hover:text-red-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                            disabled={isSavingTask}
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -365,6 +431,19 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                           updateTask(task.id, { assignees: uniqueValues(values) });
                         }}
                         className="w-full mt-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none min-h-[100px]"
+                    <div className="flex items-center gap-2 mt-3">
+                      <input
+                        value={assigneeDrafts[task.id] || ''}
+                        onChange={(event) => setAssigneeDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))}
+                        className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none disabled:opacity-60"
+                        placeholder="Agregar UID"
+                        disabled={isSavingTask}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddAssignee(task.id)}
+                        className="px-3 py-2 bg-[#4f67eb] text-white rounded-lg text-xs font-medium hover:bg-[#2a1d89] transition flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={isSavingTask}
                       >
                         {userOptions.map((user) => (
                           <option key={user.uid} value={user.uid}>
@@ -375,7 +454,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         );
