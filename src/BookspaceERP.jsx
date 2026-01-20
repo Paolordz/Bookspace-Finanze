@@ -421,8 +421,31 @@ export default function BookspaceERP() {
         t.monto
       ].some(value => String(value ?? '').toLowerCase().includes(normalizedSearch));
       return !t.deleted && matchAño && matchMes && matchSearch;
-    });
+    }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); // Ordenar por fecha descendente
   }, [tx, año, mes, normalizedSearch]);
+
+  // ========== BALANCES ACUMULADOS (HISTÓRICO COMPLETO) ==========
+  const balancesAcumulados = useMemo(() => {
+    let efectivo = 0, banco = 0, xCobrar = 0, xPagar = 0;
+
+    // Iterar sobre TODO el historial (sin filtro de fecha) para obtener balances reales
+    tx.forEach(t => {
+      if (t.deleted) return;
+
+      const m = Number(t.monto) || 0;
+      if (t.tipo === 'Ingreso') {
+        if (t.caja === 'Efectivo') efectivo += m;
+        else if (t.caja === 'Banco') banco += m;
+        else if (t.caja === 'Por cobrar') xCobrar += m;
+      } else {
+        if (t.caja === 'Efectivo') efectivo -= m;
+        else if (t.caja === 'Banco') banco -= m;
+        else if (t.caja === 'Por pagar') xPagar += m;
+      }
+    });
+
+    return { efectivo, banco, xCobrar, xPagar, liquidez: efectivo + banco };
+  }, [tx]);
 
   // ========== CALCULOS ==========
   const totales = useMemo(() => {
@@ -432,6 +455,7 @@ export default function BookspaceERP() {
       const m = Number(t.monto) || 0;
       if (t.tipo === 'Ingreso') {
         ing += m;
+        // Solo para logs visuales de flujo mensual (opcional, pero mantenemos lógica original)
         if (t.caja === 'Efectivo') efectivo += m;
         else if (t.caja === 'Banco') banco += m;
         else if (t.caja === 'Por cobrar') xCobrar += m;
@@ -498,8 +522,8 @@ export default function BookspaceERP() {
   const metricas = useMemo(() => {
     const margenBruto = totales.ing > 0 ? ((totales.balance / totales.ing) * 100) : 0;
     const roi = totales.egr > 0 ? ((totales.balance / totales.egr) * 100) : 0;
-    const liquidez = totales.efectivo + totales.banco;
-    const capitalTrabajo = liquidez + totales.xCobrar - totales.xPagar;
+    const liquidez = balancesAcumulados.liquidez;
+    const capitalTrabajo = liquidez + balancesAcumulados.xCobrar - balancesAcumulados.xPagar;
     const promedioIngreso = txFiltradas.filter(t => t.tipo === 'Ingreso').length > 0
       ? totales.ing / txFiltradas.filter(t => t.tipo === 'Ingreso').length : 0;
     const promedioEgreso = txFiltradas.filter(t => t.tipo === 'Egreso').length > 0
@@ -794,9 +818,22 @@ export default function BookspaceERP() {
 
   // ========== CRUD ==========
   const agregarTx = () => {
+    // Determinar fecha por defecto: Hoy, o el primer día del mes seleccionado
+    let defaultDate = new Date().toISOString().split('T')[0];
+
+    if (mes !== 0) {
+      // Si hay un mes seleccionado, verificar si "Hoy" está dentro de ese mes
+      const today = new Date();
+      if (today.getFullYear() !== año || (today.getMonth() + 1) !== mes) {
+        // Si hoy NO está en el mes seleccionado, usar el día 1 del mes seleccionado
+        const paddedMonth = String(mes).padStart(2, '0');
+        defaultDate = `${año}-${paddedMonth}-01`;
+      }
+    }
+
     const nueva = {
       id: Date.now(),
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: defaultDate,
       tipo: 'Ingreso',
       cat: '',
       concepto: '',
@@ -1644,22 +1681,22 @@ export default function BookspaceERP() {
                 <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
                     <Wallet className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
-                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.efectivo)}</p>
-                    <p className="text-sm text-[#b7bac3]">Efectivo</p>
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(balancesAcumulados.efectivo)}</p>
+                    <p className="text-sm text-[#b7bac3]">Efectivo (Total)</p>
                   </div>
                   <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
                     <Building className="w-6 h-6 mx-auto mb-2 text-[#4f67eb]" />
-                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.banco)}</p>
-                    <p className="text-sm text-[#b7bac3]">Banco</p>
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(balancesAcumulados.banco)}</p>
+                    <p className="text-sm text-[#b7bac3]">Banco (Total)</p>
                   </div>
                   <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
                     <CreditCard className="w-6 h-6 mx-auto mb-2 text-amber-500" />
-                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xCobrar)}</p>
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(balancesAcumulados.xCobrar)}</p>
                     <p className="text-sm text-[#b7bac3]">Por Cobrar</p>
                   </div>
                   <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center shadow-sm">
                     <PiggyBank className="w-6 h-6 mx-auto mb-2 text-red-500" />
-                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(totales.xPagar)}</p>
+                    <p className="text-lg font-bold text-[#2a1d89]">{fmt(balancesAcumulados.xPagar)}</p>
                     <p className="text-sm text-[#b7bac3]">Por Pagar</p>
                   </div>
                 </div>
@@ -2279,35 +2316,35 @@ export default function BookspaceERP() {
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-[#2a1d89]">Efectivo</span>
-                        <span className={totales.efectivo >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'}>{fmt(totales.efectivo)}</span>
+                        <span className={balancesAcumulados.efectivo >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'}>{fmt(balancesAcumulados.efectivo)}</span>
                       </div>
-                      <ProgressBar value={Math.abs(totales.efectivo)} max={totales.ing || 1} color={totales.efectivo >= 0 ? 'success' : 'danger'} />
+                      <ProgressBar value={Math.abs(balancesAcumulados.efectivo)} max={Math.abs(balancesAcumulados.liquidez) * 1.5 || 1} color={balancesAcumulados.efectivo >= 0 ? 'success' : 'danger'} />
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-[#2a1d89]">Bancos</span>
-                        <span className={totales.banco >= 0 ? 'text-[#4f67eb] font-medium' : 'text-red-500 font-medium'}>{fmt(totales.banco)}</span>
+                        <span className={balancesAcumulados.banco >= 0 ? 'text-[#4f67eb] font-medium' : 'text-red-500 font-medium'}>{fmt(balancesAcumulados.banco)}</span>
                       </div>
-                      <ProgressBar value={Math.abs(totales.banco)} max={totales.ing || 1} color="primary" />
+                      <ProgressBar value={Math.abs(balancesAcumulados.banco)} max={Math.abs(balancesAcumulados.liquidez) * 1.5 || 1} color="primary" />
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-[#2a1d89]">Por Cobrar</span>
-                        <span className="text-amber-600 font-medium">{fmt(totales.xCobrar)}</span>
+                        <span className="text-amber-600 font-medium">{fmt(balancesAcumulados.xCobrar)}</span>
                       </div>
-                      <ProgressBar value={totales.xCobrar} max={totales.ing || 1} color="warning" />
+                      <ProgressBar value={balancesAcumulados.xCobrar} max={Math.abs(balancesAcumulados.liquidez) || 1} color="warning" />
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-[#2a1d89]">Por Pagar</span>
-                        <span className="text-red-500 font-medium">{fmt(totales.xPagar)}</span>
+                        <span className="text-red-500 font-medium">{fmt(balancesAcumulados.xPagar)}</span>
                       </div>
-                      <ProgressBar value={totales.xPagar} max={totales.egr || 1} color="danger" />
+                      <ProgressBar value={balancesAcumulados.xPagar} max={Math.abs(balancesAcumulados.liquidez) || 1} color="danger" />
                     </div>
                     <div className="pt-4 border-t border-gray-100 space-y-2">
                       <div className="flex justify-between">
                         <span className="font-medium text-[#2a1d89]">Liquidez Disponible</span>
-                        <span className={`font-bold ${metricas.liquidez >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(metricas.liquidez)}</span>
+                        <span className={`font-bold ${balancesAcumulados.liquidez >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(balancesAcumulados.liquidez)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium text-[#2a1d89]">Capital de Trabajo</span>
