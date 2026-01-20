@@ -56,6 +56,18 @@ export const useCloudSync = (userId, localData, onDataUpdate) => {
   const mergeEntityArrays = useCallback((local = [], cloud = []) => {
     const merged = new Map();
 
+    const normalizeTime = (val) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      if (val instanceof Date) return val.getTime();
+      if (typeof val === 'string') return new Date(val).getTime();
+      if (typeof val === 'object') {
+        if (typeof val.toMillis === 'function') return val.toMillis();
+        if (val.seconds) return val.seconds * 1000;
+      }
+      return 0;
+    };
+
     local.forEach((item) => {
       if (item?.id) {
         merged.set(item.id, item);
@@ -70,10 +82,10 @@ export const useCloudSync = (userId, localData, onDataUpdate) => {
           return;
         }
 
-        const localTime = existing.updatedAt || existing.fecha || 0;
-        const cloudTime = item.updatedAt || item.fecha || 0;
+        const localTime = normalizeTime(existing.updatedAt || existing.fecha);
+        const cloudTime = normalizeTime(item.updatedAt || item.fecha);
 
-        // Respetar el timestamp más reciente, incluso para soft deletes
+        // Respetar el timestamp más reciente
         if (cloudTime > localTime) {
           merged.set(item.id, item);
         }

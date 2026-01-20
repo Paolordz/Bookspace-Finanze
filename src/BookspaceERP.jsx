@@ -832,7 +832,7 @@ export default function BookspaceERP() {
     }
 
     const nueva = {
-      id: Date.now(),
+      id: Date.now() + Math.random().toString().slice(2, 6),
       fecha: defaultDate,
       tipo: 'Ingreso',
       cat: '',
