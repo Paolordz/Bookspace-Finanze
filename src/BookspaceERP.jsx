@@ -4,6 +4,7 @@ import { Plus, Trash2, Download, CheckCircle, Users, Receipt, Settings, X, BarCh
 // Auth & Sync
 import { useAuth, useCloudSync, SYNC_STATUS, useActivityLog, useUsers } from './hooks';
 import { AuthModal, SyncIndicator } from './components/auth';
+import { subscribeToTasks } from './firebase';
 import { UserMenu } from './components/layout';
 import { ActivityLog, ActivityWidget } from './components/ActivityLog';
 import { BookspaceLogo } from './components/common';
@@ -266,6 +267,15 @@ export default function BookspaceERP() {
         }
       };
       syncOnLogin();
+
+      // Suscribirse a cambios en tareas en tiempo real
+      const unsubscribeTasks = subscribeToTasks(user.uid, (updatedTasks) => {
+        setTasks(updatedTasks);
+      });
+
+      return () => {
+        unsubscribeTasks();
+      };
     }
   }, [isAuthenticated, user?.uid, loading]);
 
@@ -1306,9 +1316,9 @@ export default function BookspaceERP() {
       {/* Sidebar */}
       <aside className={`bg-white border-r border-gray-100 flex flex-col transition-all duration-300 fixed h-full z-30 w-64 ${sidebarOpen ? 'translate-x-0 md:w-64' : '-translate-x-full md:w-20'} md:translate-x-0`}>
         {/* Logo */}
-        <div className="p-4 border-b border-gray-100 flex items-center gap-3">
-          <BookspaceLogo size={40} />
-          {sidebarOpen && <span className="font-bold text-[#2a1d89] text-lg">bookspace</span>}
+        <div className="p-4 border-b border-gray-100 flex items-center justify-center gap-3">
+          <BookspaceLogo size={140} />
+          {/* Text removed as requested */}
         </div>
 
         {/* Nav */}

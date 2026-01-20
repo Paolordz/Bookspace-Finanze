@@ -77,6 +77,8 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
   const userOptions = useMemo(() => {
     // Asegurar que el usuario actual esté en la lista si no viene del hook
     const allUsers = [...users];
+    
+    // Verificar si el usuario actual (userId) ya está en la lista
     const currentUserInList = allUsers.find(u => u.uid === userId);
 
     if (!currentUserInList && userId) {
@@ -95,12 +97,19 @@ export default function TasksBoard({ tasks, onTasksChange, userId, isAuthenticat
   }, [users, userId]);
 
   const getAssigneeLabel = (uid) => {
+    if (uid === userId) return 'Yo';
+    
     const user = usersById[uid];
-    if (!user) return uid;
-    if (user.displayName && user.email) {
-      return `${user.displayName} · ${user.email}`;
+    if (!user) {
+      // Intentar buscar en la lista completa por si acaso
+      const found = users.find(u => u.uid === uid);
+      if (found) return found.displayName || found.email || 'Usuario sin nombre';
+      return `Usuario (${uid.slice(0, 4)}...)`;
     }
-    return user.displayName || user.email || uid;
+    
+    if (user.displayName) return user.displayName;
+    if (user.email) return user.email;
+    return 'Usuario sin nombre';
   };
 
   const tasksByStatus = useMemo(() => {
