@@ -119,7 +119,9 @@ const writeCollectionItems = async (userId, collectionName, items = []) => {
 
 const readCollectionItems = async (userId, collectionName) => {
   const collectionRef = getSharedCollectionRef(collectionName);
-  const snapshot = await getDocs(query(collectionRef, where('ownerId', '==', userId)));
+  // MODIFICACIÓN: Quitamos el filtro 'where("ownerId", "==", userId)'
+  // Ahora traemos TODO para que sea visible por todo el equipo.
+  const snapshot = await getDocs(query(collectionRef));
   return snapshot.docs.map((docSnap) => {
     const data = docSnap.data();
     return { ...data, id: data.id ?? docSnap.id };

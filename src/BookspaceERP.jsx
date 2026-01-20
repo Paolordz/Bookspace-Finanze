@@ -115,17 +115,7 @@ export default function BookspaceERP() {
     config: cfg
   }), [tx, cli, prov, emp, leads, fact, juntas, cfg]);
 
-  const serializedData = useMemo(() => ({
-    tx: JSON.stringify(tx),
-    cli: JSON.stringify(cli),
-    prov: JSON.stringify(prov),
-    emp: JSON.stringify(emp),
-    leads: JSON.stringify(leads),
-    fact: JSON.stringify(fact),
-    juntas: JSON.stringify(juntas),
-    tasks: JSON.stringify(tasks),
-    cfg: JSON.stringify(cfg)
-  }), [tx, cli, prov, emp, leads, fact, juntas, tasks, cfg]);
+
 
   // Callback para actualizar datos desde la nube
   const handleCloudDataUpdate = useCallback((cloudData) => {
@@ -181,7 +171,7 @@ export default function BookspaceERP() {
             try {
               return await window.storage.get(key);
             } catch (e) {
-              console.log('Error loading', key);
+              // console.log('Error loading', key);
               return null;
             }
           })
@@ -193,7 +183,7 @@ export default function BookspaceERP() {
           }
         });
       } catch (e) {
-        console.log('Storage error');
+        // console.log('Storage error');
       }
       setLoading(false);
     };
@@ -226,16 +216,17 @@ export default function BookspaceERP() {
     const saveData = async () => {
       try {
         // Guardar localmente
+        // OPTIMIZACIÓN: Stringify solo al guardar, no en cada render
         await Promise.all([
-          window.storage.set('bs12-tx', serializedData.tx),
-          window.storage.set('bs12-cli', serializedData.cli),
-          window.storage.set('bs12-prov', serializedData.prov),
-          window.storage.set('bs12-emp', serializedData.emp),
-          window.storage.set('bs12-leads', serializedData.leads),
-          window.storage.set('bs12-fact', serializedData.fact),
-          window.storage.set('bs12-juntas', serializedData.juntas),
-          window.storage.set('bs12-tasks', serializedData.tasks),
-          window.storage.set('bs12-cfg', serializedData.cfg)
+          window.storage.set('bs12-tx', JSON.stringify(tx)),
+          window.storage.set('bs12-cli', JSON.stringify(cli)),
+          window.storage.set('bs12-prov', JSON.stringify(prov)),
+          window.storage.set('bs12-emp', JSON.stringify(emp)),
+          window.storage.set('bs12-leads', JSON.stringify(leads)),
+          window.storage.set('bs12-fact', JSON.stringify(fact)),
+          window.storage.set('bs12-juntas', JSON.stringify(juntas)),
+          window.storage.set('bs12-tasks', JSON.stringify(tasks)),
+          window.storage.set('bs12-cfg', JSON.stringify(cfg))
         ]);
 
         // Sincronizar con la nube si está habilitado
@@ -243,13 +234,13 @@ export default function BookspaceERP() {
           saveToCloudDebounced(allData);
         }
       } catch (e) {
-        console.log('Save error');
+        // console.log('Save error');
       }
     };
 
     const timer = setTimeout(saveData, 500);
     return () => clearTimeout(timer);
-  }, [serializedData, loading, syncEnabled, isAuthenticated, allData, saveToCloudDebounced]);
+  }, [tx, cli, prov, emp, leads, fact, juntas, tasks, cfg, loading, syncEnabled, isAuthenticated, allData, saveToCloudDebounced]);
 
   // Sincronizar cuando el usuario inicie sesión
   useEffect(() => {
@@ -263,7 +254,7 @@ export default function BookspaceERP() {
             notify('Datos sincronizados desde la nube');
           }
         } catch (e) {
-          console.log('Error syncing on login:', e);
+          // console.log('Error syncing on login:', e);
         }
       };
       syncOnLogin();

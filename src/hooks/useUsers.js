@@ -19,17 +19,14 @@ export const useUsers = ({ enabled = true } = {}) => {
 
     const load = async () => {
       setLoading(true);
-      console.log('useUsers: Inicianado carga de usuarios...');
       const response = await loadUsersFromCloud();
 
       if (!isMounted) return;
 
       if (response.success) {
-        console.log('useUsers: Usuarios cargados:', response.data?.length);
         setUsers(response.data || []);
         setError(null);
       } else {
-        console.error('useUsers: Error cargando usuarios:', response);
         if (response.reason !== 'not-configured') {
           setError(response.error || 'No se pudieron cargar usuarios');
         }
@@ -40,7 +37,6 @@ export const useUsers = ({ enabled = true } = {}) => {
     load();
     unsubscribe = subscribeToUsers((data) => {
       if (!isMounted) return;
-      console.log('useUsers: Actualización en tiempo real:', data?.length);
       setUsers(data || []);
     });
 

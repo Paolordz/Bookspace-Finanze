@@ -29,35 +29,30 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
     
-    // Shared Data Collections (Transactions, Clients, etc.)
-    // Documents must have 'ownerId' field to control access
+    // --- Colecciones Compartidas (Transacciones, Clientes, etc.) ---
+    // Regla: Cualquier usuario autenticado puede leer y escribir.
+    // Esto habilita la colaboración en tiempo real entre todo el equipo.
+    
     match /transactions/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /clients/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /providers/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /employees/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /leads/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /invoices/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
     match /meetings/{docId} {
-      allow read, write: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
 
     // Tasks: Shared collection
