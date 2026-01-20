@@ -95,10 +95,14 @@ export default function BookspaceERP() {
   const [cfg, setCfg] = useState({ empresa: 'Bookspace', rfc: '', dir: '', tel: '', email: '' });
 
   // Modal
+  // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [editData, setEditData] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Notifications
+  const [notificationOpen, setNotificationOpen] = useState(false);
 
   // Auth Modal
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -1227,7 +1231,7 @@ export default function BookspaceERP() {
   );
 
   // Stat Card Component
-  const StatCard = ({ title, value, subtitle, icon: Icon, color = 'primary', trend }) => {
+  const StatCard = ({ title, value, subtitle, icon: Icon, color = 'primary', trend, onClick, className }) => {
     const colorClasses = {
       primary: 'border-l-[#4f67eb]',
       success: 'border-l-emerald-500',
@@ -1241,7 +1245,10 @@ export default function BookspaceERP() {
       danger: 'text-red-600 bg-red-50'
     };
     return (
-      <div className={`bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow border-l-4 ${colorClasses[color]}`}>
+      <div
+        onClick={onClick}
+        className={`bg-white rounded-xl border border-gray-100 p-5 shadow-sm transition-all border-l-4 ${colorClasses[color]} ${onClick ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : ''} ${className || ''}`}
+      >
         <div className="flex justify-between items-start">
           <div>
             <p className="text-[#b7bac3] text-sm font-medium">{title}</p>
@@ -1428,12 +1435,52 @@ export default function BookspaceERP() {
               </div>
 
               {/* Notifications */}
-              <button className="relative p-2.5 text-[#b7bac3] hover:text-[#2a1d89] hover:bg-[#f8f9fc] rounded-xl transition">
-                <Bell className="w-5 h-5" />
-                {juntasProximas.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-[#4f67eb] rounded-full"></span>
+              <div className="relative">
+                <button
+                  onClick={() => setNotificationOpen(!notificationOpen)}
+                  className={`relative p-2.5 rounded-xl transition ${notificationOpen ? 'bg-[#f8f9fc] text-[#2a1d89]' : 'text-[#b7bac3] hover:text-[#2a1d89] hover:bg-[#f8f9fc]'}`}
+                >
+                  <Bell className="w-5 h-5" />
+                  {juntasProximas.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-[#4f67eb] rounded-full"></span>
+                  )}
+                </button>
+                {notificationOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-100 rounded-xl shadow-lg z-50 overflow-hidden animate-fade-in">
+                    <div className="p-3 border-b border-gray-100 flex justify-between items-center">
+                      <h3 className="font-semibold text-[#2a1d89] text-sm">Notificaciones</h3>
+                      <button onClick={() => setNotificationOpen(false)} className="text-[#b7bac3] hover:text-[#2a1d89]"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {juntasProximas.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-[#b7bac3]">No hay notificaciones nuevas</div>
+                      ) : (
+                        juntasProximas.map(j => (
+                          <div
+                            key={j.id}
+                            onClick={() => {
+                              abrirModal('junta', j);
+                              setNotificationOpen(false);
+                            }}
+                            className="p-3 border-b border-gray-50 hover:bg-[#f8f9fc] cursor-pointer transition"
+                          >
+                            <div className="flex gap-2">
+                              <div className="bg-[#4f67eb]/10 text-[#4f67eb] p-2 rounded-lg h-fit">
+                                <Clock className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-[#2a1d89]">Próxima junta</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{j.leadNombre}</p>
+                                <p className="text-[10px] text-[#4f67eb] mt-1">{new Date(j.fecha).toLocaleDateString('es-MX')} - {j.hora}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 )}
-              </button>
+              </div>
 
               {/* Sync Status */}
               {isAuthenticated && (
@@ -1478,6 +1525,7 @@ export default function BookspaceERP() {
                   icon={ArrowUpRight}
                   color="success"
                   trend="up"
+                  onClick={() => { setTab('registros'); setFiltro(''); }}
                 />
                 <StatCard
                   title="Total Egresos"
@@ -1486,6 +1534,7 @@ export default function BookspaceERP() {
                   icon={ArrowDownRight}
                   color="danger"
                   trend="down"
+                  onClick={() => { setTab('registros'); setFiltro(''); }}
                 />
                 <StatCard
                   title="Leads Activos"
@@ -1493,6 +1542,7 @@ export default function BookspaceERP() {
                   subtitle={`${fmt(crmStats.potencial)}/mes potencial`}
                   icon={Target}
                   color="primary"
+                  onClick={() => setTab('crm')}
                 />
                 <StatCard
                   title="Por Cobrar"
@@ -1500,6 +1550,7 @@ export default function BookspaceERP() {
                   subtitle={`${factFiltradas.filter(f => f.estado === 'pendiente').length} facturas`}
                   icon={FileText}
                   color="warning"
+                  onClick={() => setTab('facturas')}
                 />
               </div>
 
@@ -2398,9 +2449,20 @@ export default function BookspaceERP() {
           {tab === 'config' && (
             <div className="space-y-6 max-w-2xl">
               <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-4">
-                <h3 className="font-bold text-[#2a1d89] flex items-center gap-2">
-                  <Building className="w-5 h-5 text-[#4f67eb]" />Empresa
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-[#2a1d89] flex items-center gap-2">
+                    <Building className="w-5 h-5 text-[#4f67eb]" />Empresa
+                  </h3>
+                  <button
+                    onClick={() => {
+                      saveToCloudDebounced(allData);
+                      notify('Información de empresa guardada');
+                    }}
+                    className="text-sm font-medium text-[#4f67eb] hover:underline"
+                  >
+                    Guardar
+                  </button>
+                </div>
                 <div>
                   <label className="text-[#b7bac3] text-sm block mb-1.5">Nombre</label>
                   <input type="text" value={cfg.empresa} onChange={e => setCfg({ ...cfg, empresa: e.target.value })} className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-[#4f67eb]/20 focus:border-[#4f67eb] outline-none" />
