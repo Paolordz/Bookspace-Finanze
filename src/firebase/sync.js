@@ -349,11 +349,10 @@ export const subscribeToUserData = (userId, callback) => {
     console.error('Error en suscripción de usuario:', error);
   });
 
+  // MODIFICACIÓN: Quitamos el filtro 'where("ownerId", "==", userId)'
+  // Ahora traemos TODO para que sea visible por todo el equipo (consistente con readCollectionItems).
   const unsubscribes = SHARED_DATA_COLLECTIONS.map((collectionName) => {
-    const collectionRef = query(
-      getSharedCollectionRef(collectionName),
-      where('ownerId', '==', userId)
-    );
+    const collectionRef = getSharedCollectionRef(collectionName);
     return onSnapshot(collectionRef, (snapshot) => {
       currentData[collectionName] = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
