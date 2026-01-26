@@ -35,6 +35,101 @@ const SHARED_DATA_COLLECTIONS = [
   'meetings'
 ];
 
+/**
+ * Configuración de retry con backoff exponencial
+ */
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelay: 1000, // 1 segundo
+  maxDelay: 10000  // 10 segundos
+};
+
+/**
+ * Helper para ejecutar operaciones con retry y backoff exponencial
+ * @param {Function} operation - Función async a ejecutar
+ * @param {string} operationName - Nombre de la operación para logging
+ * @returns {Promise} - Resultado de la operación
+ */
+const withRetry = async (operation, operationName = 'operation') => {
+  let lastError;
+
+  for (let attempt = 0; attempt < RETRY_CONFIG.maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const isNetworkError =
+        error.code === 'unavailable' ||
+        error.code === 'network-request-failed' ||
+        error.message?.toLowerCase().includes('offline') ||
+        error.message?.toLowerCase().includes('network');
+
+      if (!isNetworkError || attempt === RETRY_CONFIG.maxRetries - 1) {
+        throw error;
+      }
+
+      const delay = Math.min(
+        RETRY_CONFIG.baseDelay * Math.pow(2, attempt),
+        RETRY_CONFIG.maxDelay
+      );
+
+      console.log(`[${operationName}] Reintentando en ${delay}ms (intento ${attempt + 1}/${RETRY_CONFIG.maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+};
+
+/**
+ * Asegura que un item tenga updatedAt timestamp
+ * @param {Object} item - Item a normalizar
+ * @returns {Object} - Item con updatedAt garantizado
+ */
+const ensureUpdatedAt = (item) => {
+  if (!item) return item;
+
+  if (!item.updatedAt) {
+    // Si tiene fecha, usar esa como fallback
+    if (item.fecha) {
+      const parsed = Date.parse(item.fecha);
+      return { ...item, updatedAt: Number.isNaN(parsed) ? Date.now() : parsed };
+    }
+    return { ...item, updatedAt: Date.now() };
+  }
+
+  return item;
+};
+
+/**
+ * Normaliza updatedAt a número (milisegundos)
+ */
+const normalizeUpdatedAt = (value) => {
+  if (!value) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+    const asNumber = Number(value);
+    return Number.isNaN(asNumber) ? 0 : asNumber;
+  }
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'object') {
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    if (typeof value.seconds === 'number') return value.seconds * 1000;
+  }
+  return 0;
+};
+
+/**
+ * Filtra elementos eliminados (soft delete)
+ * @param {Array} items - Array de items
+ * @returns {Array} - Items sin los marcados como deleted
+ */
+const filterDeleted = (items = []) => {
+  return items.filter(item => !item.deleted);
+};
+
 const createEmptyUserData = () => ({
   transactions: [],
   clients: [],
@@ -78,6 +173,7 @@ const writeCollectionItems = async (userId, collectionName, items = []) => {
   const batches = [];
   const collectionRef = getSharedCollectionRef(collectionName);
   const itemIds = new Set();
+  const now = Date.now();
 
   let batch = writeBatch(db);
   let operationCount = 0;
@@ -91,10 +187,16 @@ const writeCollectionItems = async (userId, collectionName, items = []) => {
 
     itemIds.add(docId);
     const docRef = doc(collectionRef, getSharedDocId(userId, docId));
+
+    // Asegurar que cada item tenga updatedAt
+    const normalizedItem = ensureUpdatedAt(item);
+
     batch.set(docRef, {
-      ...item,
+      ...normalizedItem,
       id: docId,
-      ownerId: userId
+      ownerId: userId,
+      // Si no tiene updatedAt después de normalizar, usar now
+      updatedAt: normalizedItem.updatedAt || now
     }, { merge: true });
     operationCount += 1;
 
@@ -113,19 +215,24 @@ const writeCollectionItems = async (userId, collectionName, items = []) => {
   // Ahora usamos "Soft Deletes" (deleted: true)
 
   if (batches.length > 0) {
-    await commitBatchWrites(batches);
+    // Ejecutar batches en paralelo para mejor rendimiento
+    await Promise.all(batches.map(b => b.commit()));
   }
 };
 
 const readCollectionItems = async (userId, collectionName) => {
-  const collectionRef = getSharedCollectionRef(collectionName);
-  // MODIFICACIÓN: Quitamos el filtro 'where("ownerId", "==", userId)'
-  // Ahora traemos TODO para que sea visible por todo el equipo.
-  const snapshot = await getDocs(query(collectionRef));
-  return snapshot.docs.map((docSnap) => {
-    const data = docSnap.data();
-    return { ...data, id: data.id ?? docSnap.id };
-  });
+  return withRetry(async () => {
+    const collectionRef = getSharedCollectionRef(collectionName);
+    // MODIFICACIÓN: Quitamos el filtro 'where("ownerId", "==", userId)'
+    // Ahora traemos TODO para que sea visible por todo el equipo.
+    const snapshot = await getDocs(query(collectionRef));
+    const items = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return { ...data, id: data.id ?? docSnap.id };
+    });
+    // Filtrar elementos marcados como eliminados (soft delete)
+    return filterDeleted(items);
+  }, `readCollection:${collectionName}`);
 };
 
 const migrateLegacyUserData = async (userId) => {
@@ -239,6 +346,7 @@ const mapTaskDoc = (taskDoc) => {
 
 /**
  * Guardar todos los datos del usuario en Firestore
+ * Optimizado: Las colecciones se guardan en paralelo para mejor rendimiento
  */
 export const saveUserDataToCloud = async (userId, data) => {
   if (!isFirebaseConfigured()) {
@@ -249,22 +357,29 @@ export const saveUserDataToCloud = async (userId, data) => {
   try {
     const userDocRef = getUserConfigDocRef(userId);
     const userData = data || createEmptyUserData();
+    const version = Date.now();
 
-    await setDoc(userDocRef, {
-      config: userData.config || {},
-      updatedAt: serverTimestamp(),
-      version: Date.now()
-    }, { merge: true });
+    // Guardar config del usuario con retry
+    await withRetry(async () => {
+      await setDoc(userDocRef, {
+        config: userData.config || {},
+        updatedAt: serverTimestamp(),
+        version
+      }, { merge: true });
+    }, 'saveUserConfig');
 
-    await writeCollectionItems(userId, 'transactions', userData.transactions || []);
-    await writeCollectionItems(userId, 'clients', userData.clients || []);
-    await writeCollectionItems(userId, 'providers', userData.providers || []);
-    await writeCollectionItems(userId, 'employees', userData.employees || []);
-    await writeCollectionItems(userId, 'leads', userData.leads || []);
-    await writeCollectionItems(userId, 'invoices', userData.invoices || []);
-    await writeCollectionItems(userId, 'meetings', userData.meetings || []);
+    // Guardar todas las colecciones EN PARALELO para mejor rendimiento
+    await Promise.all([
+      writeCollectionItems(userId, 'transactions', userData.transactions || []),
+      writeCollectionItems(userId, 'clients', userData.clients || []),
+      writeCollectionItems(userId, 'providers', userData.providers || []),
+      writeCollectionItems(userId, 'employees', userData.employees || []),
+      writeCollectionItems(userId, 'leads', userData.leads || []),
+      writeCollectionItems(userId, 'invoices', userData.invoices || []),
+      writeCollectionItems(userId, 'meetings', userData.meetings || [])
+    ]);
 
-    return { success: true };
+    return { success: true, version };
   } catch (error) {
     console.error('Error guardando datos en la nube:', error);
     return { success: false, error: error.message };
@@ -273,6 +388,7 @@ export const saveUserDataToCloud = async (userId, data) => {
 
 /**
  * Cargar datos del usuario desde Firestore
+ * Optimizado: Las colecciones se cargan en paralelo para mejor rendimiento
  */
 export const loadUserDataFromCloud = async (userId) => {
   if (!isFirebaseConfigured()) {
@@ -282,12 +398,13 @@ export const loadUserDataFromCloud = async (userId) => {
   try {
     await migrateLegacyUserData(userId);
 
-    const userDocRef = getUserConfigDocRef(userId);
-    const docSnap = await getDoc(userDocRef);
-
-    const collections = await Promise.all(
-      SHARED_DATA_COLLECTIONS.map((collectionName) => readCollectionItems(userId, collectionName))
-    );
+    // Cargar config y colecciones EN PARALELO
+    const [docSnap, ...collections] = await Promise.all([
+      withRetry(() => getDoc(getUserConfigDocRef(userId)), 'loadUserConfig'),
+      ...SHARED_DATA_COLLECTIONS.map((collectionName) =>
+        readCollectionItems(userId, collectionName)
+      )
+    ]);
 
     const mapped = SHARED_DATA_COLLECTIONS.reduce((acc, collectionName, index) => {
       acc[collectionName] = collections[index];
@@ -321,6 +438,7 @@ export const loadUserDataFromCloud = async (userId) => {
 
 /**
  * Suscribirse a cambios en tiempo real
+ * Incluye filtrado de elementos eliminados (soft delete)
  */
 export const subscribeToUserData = (userId, callback) => {
   if (!isFirebaseConfigured()) {
@@ -329,12 +447,19 @@ export const subscribeToUserData = (userId, callback) => {
 
   const currentData = createEmptyUserData();
   let currentVersion = 0;
+  let debounceTimer = null;
 
+  // Debounce notifications para evitar actualizaciones excesivas
   const notify = () => {
-    callback({
-      ...currentData,
-      version: currentVersion
-    });
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      callback({
+        ...currentData,
+        version: currentVersion
+      });
+    }, 100); // 100ms de debounce
   };
 
   const userDocRef = getUserConfigDocRef(userId);
@@ -354,10 +479,12 @@ export const subscribeToUserData = (userId, callback) => {
   const unsubscribes = SHARED_DATA_COLLECTIONS.map((collectionName) => {
     const collectionRef = getSharedCollectionRef(collectionName);
     return onSnapshot(collectionRef, (snapshot) => {
-      currentData[collectionName] = snapshot.docs.map((docSnap) => {
+      const items = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
         return { ...data, id: data.id ?? docSnap.id };
       });
+      // Filtrar elementos eliminados (soft delete)
+      currentData[collectionName] = filterDeleted(items);
       notify();
     }, (error) => {
       console.error(`Error en suscripción de ${collectionName}:`, error);
@@ -365,6 +492,9 @@ export const subscribeToUserData = (userId, callback) => {
   });
 
   return () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
     unsubscribeUser();
     unsubscribes.forEach((unsubscribe) => unsubscribe());
   };
@@ -372,6 +502,7 @@ export const subscribeToUserData = (userId, callback) => {
 
 /**
  * Cargar tareas del usuario desde Firestore (colección)
+ * Incluye retry con backoff exponencial
  */
 export const loadTasksFromCloud = async (userId) => {
   if (!isFirebaseConfigured()) {
@@ -379,14 +510,19 @@ export const loadTasksFromCloud = async (userId) => {
   }
 
   try {
-    const tasksQuery = query(
-      getTasksCollectionRef(),
-      where('sharedWith', 'array-contains', userId)
-    );
-    const snapshot = await getDocs(tasksQuery);
-    const tasks = snapshot.docs.map(mapTaskDoc);
+    const tasks = await withRetry(async () => {
+      const tasksQuery = query(
+        getTasksCollectionRef(),
+        where('sharedWith', 'array-contains', userId)
+      );
+      const snapshot = await getDocs(tasksQuery);
+      return snapshot.docs.map(mapTaskDoc);
+    }, 'loadTasks');
 
-    return { success: true, data: tasks };
+    // Filtrar tareas eliminadas
+    const activeTasks = filterDeleted(tasks);
+
+    return { success: true, data: activeTasks };
   } catch (error) {
     console.error('Error cargando tareas de la nube:', error);
     return { success: false, error: error.message };
@@ -395,6 +531,7 @@ export const loadTasksFromCloud = async (userId) => {
 
 /**
  * Suscribirse a cambios en tareas del usuario
+ * Incluye filtrado de tareas eliminadas (soft delete)
  */
 export const subscribeToTasks = (userId, callback) => {
   if (!isFirebaseConfigured()) {
@@ -408,7 +545,8 @@ export const subscribeToTasks = (userId, callback) => {
 
   return onSnapshot(tasksQuery, (snapshot) => {
     const tasks = snapshot.docs.map(mapTaskDoc);
-    callback(tasks);
+    // Filtrar tareas eliminadas (soft delete)
+    callback(filterDeleted(tasks));
   }, (error) => {
     console.error('Error en suscripción de tareas:', error);
   });
@@ -522,68 +660,179 @@ export const syncDataWithCloud = async (userId, localData, localVersion) => {
 
 /**
  * Merge inteligente de datos (combina arrays sin duplicados por ID)
+ * Usa normalizeUpdatedAt para comparar timestamps de diferentes formatos
+ * @param {Object} localData - Datos locales
+ * @param {Object} cloudData - Datos de la nube
+ * @returns {Object} - Datos combinados con estadísticas de conflictos
  */
 const mergeData = (localData, cloudData) => {
-  const mergeArrays = (local = [], cloud = []) => {
+  let conflictCount = 0;
+
+  const mergeArrays = (local = [], cloud = [], collectionName = '') => {
     const merged = new Map();
-    const normalizeUpdatedAt = (value) => {
-      if (!value) return 0;
-      if (typeof value === 'number') return value;
-      if (typeof value === 'string') {
-        const parsed = Date.parse(value);
-        if (!Number.isNaN(parsed)) return parsed;
-        const asNumber = Number(value);
-        return Number.isNaN(asNumber) ? 0 : asNumber;
-      }
-      if (value instanceof Date) return value.getTime();
-      if (typeof value === 'object') {
-        if (typeof value.toMillis === 'function') return value.toMillis();
-        if (typeof value.seconds === 'number') return value.seconds * 1000;
-      }
-      return 0;
-    };
 
     // Agregar elementos locales
     local.forEach(item => {
-      if (item.id) {
-        merged.set(item.id, item);
+      if (item?.id) {
+        merged.set(item.id, { ...item, _source: 'local' });
       }
     });
 
     // Agregar o actualizar con elementos de la nube
     cloud.forEach(item => {
-      if (item.id) {
+      if (item?.id) {
         const existing = merged.get(item.id);
         if (!existing) {
-          merged.set(item.id, item);
+          merged.set(item.id, { ...item, _source: 'cloud' });
         } else {
           // Mantener el más reciente basado en updatedAt o fecha
           const localTime = normalizeUpdatedAt(existing.updatedAt) || normalizeUpdatedAt(existing.fecha);
           const cloudTime = normalizeUpdatedAt(item.updatedAt) || normalizeUpdatedAt(item.fecha);
 
-          // Si el cloud tiene deleted: true y es mas reciente, se respeta
-          // Si el local tiene deleted: true y es mas reciente, se respeta
+          // Detectar conflicto: ambos tienen cambios recientes (dentro de 5 segundos)
+          const timeDiff = Math.abs(cloudTime - localTime);
+          if (timeDiff < 5000 && timeDiff > 0) {
+            conflictCount++;
+            console.log(`[merge] Conflicto detectado en ${collectionName}:${item.id} (diff: ${timeDiff}ms)`);
+          }
 
+          // Si el cloud tiene deleted: true y es más reciente, se respeta
+          // Si el local tiene deleted: true y es más reciente, se respeta
           if (cloudTime > localTime) {
-            merged.set(item.id, item);
+            merged.set(item.id, { ...item, _source: 'cloud' });
           }
         }
       }
     });
 
-    return Array.from(merged.values());
+    // Limpiar _source antes de retornar
+    return Array.from(merged.values()).map(({ _source, ...item }) => item);
   };
 
-  return {
-    transactions: mergeArrays(localData.transactions, cloudData.transactions),
-    clients: mergeArrays(localData.clients, cloudData.clients),
-    providers: mergeArrays(localData.providers, cloudData.providers),
-    employees: mergeArrays(localData.employees, cloudData.employees),
-    leads: mergeArrays(localData.leads, cloudData.leads),
-    invoices: mergeArrays(localData.invoices, cloudData.invoices),
-    meetings: mergeArrays(localData.meetings, cloudData.meetings),
+  const result = {
+    transactions: mergeArrays(localData.transactions, cloudData.transactions, 'transactions'),
+    clients: mergeArrays(localData.clients, cloudData.clients, 'clients'),
+    providers: mergeArrays(localData.providers, cloudData.providers, 'providers'),
+    employees: mergeArrays(localData.employees, cloudData.employees, 'employees'),
+    leads: mergeArrays(localData.leads, cloudData.leads, 'leads'),
+    invoices: mergeArrays(localData.invoices, cloudData.invoices, 'invoices'),
+    meetings: mergeArrays(localData.meetings, cloudData.meetings, 'meetings'),
     config: { ...localData.config, ...cloudData.config }
   };
+
+  if (conflictCount > 0) {
+    console.log(`[merge] Total de conflictos detectados: ${conflictCount}`);
+  }
+
+  return result;
+};
+
+/**
+ * Marcar un elemento como eliminado (soft delete)
+ * Esto permite que la eliminación se sincronice correctamente entre usuarios
+ * @param {string} userId - ID del usuario
+ * @param {string} collectionName - Nombre de la colección
+ * @param {string|number} itemId - ID del elemento a eliminar
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export const softDeleteItem = async (userId, collectionName, itemId) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const collectionRef = getSharedCollectionRef(collectionName);
+    const docId = getSharedDocId(userId, String(itemId));
+    const docRef = doc(collectionRef, docId);
+
+    await withRetry(async () => {
+      await setDoc(docRef, {
+        deleted: true,
+        deletedAt: Date.now(),
+        deletedBy: userId,
+        updatedAt: Date.now()
+      }, { merge: true });
+    }, `softDelete:${collectionName}:${itemId}`);
+
+    return { success: true };
+  } catch (error) {
+    console.error(`Error eliminando ${collectionName}:${itemId}:`, error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Restaurar un elemento eliminado
+ * @param {string} userId - ID del usuario
+ * @param {string} collectionName - Nombre de la colección
+ * @param {string|number} itemId - ID del elemento a restaurar
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export const restoreDeletedItem = async (userId, collectionName, itemId) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const collectionRef = getSharedCollectionRef(collectionName);
+    const docId = getSharedDocId(userId, String(itemId));
+    const docRef = doc(collectionRef, docId);
+
+    await withRetry(async () => {
+      await setDoc(docRef, {
+        deleted: false,
+        restoredAt: Date.now(),
+        restoredBy: userId,
+        updatedAt: Date.now()
+      }, { merge: true });
+    }, `restore:${collectionName}:${itemId}`);
+
+    return { success: true };
+  } catch (error) {
+    console.error(`Error restaurando ${collectionName}:${itemId}:`, error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Obtener estadísticas de sincronización
+ * Útil para debugging y monitoreo
+ * @param {string} userId - ID del usuario
+ * @returns {Promise<{success: boolean, stats?: Object, error?: string}>}
+ */
+export const getSyncStats = async (userId) => {
+  if (!isFirebaseConfigured()) {
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    const stats = {};
+
+    await Promise.all(
+      SHARED_DATA_COLLECTIONS.map(async (collectionName) => {
+        const collectionRef = getSharedCollectionRef(collectionName);
+        const snapshot = await getDocs(query(collectionRef));
+
+        const items = snapshot.docs.map(doc => doc.data());
+        const activeItems = items.filter(item => !item.deleted);
+        const deletedItems = items.filter(item => item.deleted);
+        const myItems = items.filter(item => item.ownerId === userId);
+
+        stats[collectionName] = {
+          total: items.length,
+          active: activeItems.length,
+          deleted: deletedItems.length,
+          mine: myItems.length,
+          shared: items.length - myItems.length
+        };
+      })
+    );
+
+    return { success: true, stats };
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**
