@@ -914,13 +914,23 @@ export default function BookspaceERP() {
     notify('¡Convertido a cliente!');
   };
 
-  const agregarJunta = (leadId = null) => {
+  const agregarJunta = (leadId = null, preselectedDate = null) => {
     const lead = leadId ? leads.find(l => l.id === leadId) : null;
+    let fechaJunta = new Date().toISOString().split('T')[0];
+
+    if (preselectedDate) {
+      if (preselectedDate instanceof Date) {
+        fechaJunta = preselectedDate.toISOString().split('T')[0];
+      } else {
+        fechaJunta = String(preselectedDate);
+      }
+    }
+
     const nueva = {
       id: Date.now(),
       leadId: leadId || '',
       leadNombre: lead ? (lead.venue || lead.contacto) : '',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: fechaJunta,
       hora: '10:00',
       duracion: '60',
       lugar: '',
@@ -1933,6 +1943,7 @@ export default function BookspaceERP() {
                   meetings={juntas}
                   leads={leads}
                   onSelectMeeting={(meeting) => abrirModal('junta', meeting)}
+                  onAddMeeting={(date) => agregarJunta(null, date)}
                 />
               </Suspense>
             </div>

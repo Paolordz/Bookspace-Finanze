@@ -512,8 +512,7 @@ export const loadTasksFromCloud = async (userId) => {
   try {
     const tasks = await withRetry(async () => {
       const tasksQuery = query(
-        getTasksCollectionRef(),
-        where('sharedWith', 'array-contains', userId)
+        getTasksCollectionRef()
       );
       const snapshot = await getDocs(tasksQuery);
       return snapshot.docs.map(mapTaskDoc);
@@ -539,8 +538,7 @@ export const subscribeToTasks = (userId, callback) => {
   }
 
   const tasksQuery = query(
-    getTasksCollectionRef(),
-    where('sharedWith', 'array-contains', userId)
+    getTasksCollectionRef()
   );
 
   return onSnapshot(tasksQuery, (snapshot) => {

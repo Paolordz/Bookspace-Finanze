@@ -174,21 +174,13 @@ service cloud.firestore {
     // Readable if user is creator OR is in 'sharedWith' array
     // Writable if user is creator OR is in 'sharedWith' array (for updates)
     match /tasks/{taskId} {
-      // Helper: Check if user has access to the task
-      function hasTaskAccess() {
-        return resource.data.createdBy == request.auth.uid ||
-               request.auth.uid in resource.data.sharedWith;
-      }
-
       allow create: if isAuthenticated()
                     && request.resource.data.createdBy == request.auth.uid
-                    && request.auth.uid in request.resource.data.sharedWith
                     && isReasonableSize();
 
-      allow read: if isAuthenticated() && hasTaskAccess();
+      allow read: if isAuthenticated();
 
       allow update: if isAuthenticated()
-                    && hasTaskAccess()
                     && isReasonableSize();
 
       allow delete: if isAuthenticated()
